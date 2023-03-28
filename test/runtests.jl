@@ -1,6 +1,5 @@
 module runtests
 
-# using AutoHashEqualsCached: @auto_hash_equals_cached, @auto_hash_equals
 using AutoHashEqualsCached: @auto_hash_equals, @auto_hash_equals_cached
 using Markdown: plain
 using Serialization: serialize, deserialize, IOBuffer, seekstart
