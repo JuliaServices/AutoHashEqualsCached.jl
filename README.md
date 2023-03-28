@@ -2,7 +2,7 @@
 
 # AutoHashEqualsCached
 
-A pair of macros to add == and hash() to struct types: `@auto_hash_equals` and `@auto_hash_equals_cached`.
+A pair of macros to add `==` and `hash()` to struct types: `@auto_hash_equals` and `@auto_hash_equals_cached`.
 
 # `@auto_hash_equals`
 

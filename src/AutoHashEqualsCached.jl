@@ -56,7 +56,7 @@ function get_struct_decl(typ::Expr)
         for x in typ.args
             if x.head == :macrocall || x.head == :struct || x.head == :block
                 result = get_struct_decl(x)
-                if (result !== nothing)
+                if !isnothing(result)
                     return result
                 end
             end
@@ -82,7 +82,7 @@ function unpack_type_name(n::Expr)
     if n.head == :curly
         type_name = n.args[1]
         type_name isa Symbol ||
-            error("macro @auto_hash_equals_cached applied to type with invalid signature")
+            error("macro @auto_hash_equals_cached applied to type with invalid signature: $type_name")
         where_list = n.args[2:length(n.args)]
         type_params = map(unpack_name, where_list)
         full_type_name = Expr(:curly, type_name, type_params...)
@@ -90,7 +90,7 @@ function unpack_type_name(n::Expr)
     elseif n.head == :(<:)
         unpack_type_name(n.args[1])
     else
-        error("macro @auto_hash_equals_cached applied to type with unexpected signature")
+        error("macro @auto_hash_equals_cached applied to type with unexpected signature: $n")
     end
 end
 
