@@ -35,14 +35,6 @@ function _show_default_auto_hash_equals_cached(io::IO, @nospecialize(x))
 end
 
 """
-An exception used for reporting errors.
-"""
-struct AutoHashEqualsException <: Exception
-    msg::String
-end
-error(msg::String) = throw(AutoHashEqualsException(msg))
-
-"""
 Find the first struct declaration buried in the Expr.
 """
 get_struct_decl(typ) = nothing
@@ -144,7 +136,7 @@ macro auto_hash_equals_cached(typ::Expr)
     push!(type_body, :(_cached_hash::UInt))
 
     # Add the internal constructor
-    if where_list isa Nothing
+    if isnothing(where_list)
         push!(type_body, :(function $(full_type_name)($(member_decls...))
             new($(member_names...), $(foldl((r, a) -> :(hash($a, $r)), member_names; init = :(hash($(QuoteNode(type_name)))))))
         end))
@@ -172,7 +164,7 @@ macro auto_hash_equals_cached(typ::Expr)
         end
     end
 
-    if where_list isa Nothing
+    if isnothing(where_list)
         # add == for non-generic types
         push!(result.args, esc(quote
             function Base.:(==)(a::$(type_name), b::$(type_name))
