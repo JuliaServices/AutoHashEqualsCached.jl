@@ -163,7 +163,7 @@ macro auto_hash_equals_cached(typ::Expr)
 
     # add functions for hash(x), hash(x, h), and Base._show_default
     result = quote
-        Base.@__doc__$(esc(typ))
+        Base.@__doc__ $(esc(typ))
         $(esc(quote
             function Base.hash(x::$(type_name))
                 x._cached_hash
@@ -227,7 +227,7 @@ macro auto_hash_equals(typ::Expr)
     # we do not require that the types (specifically, the type arguments) are the same for two
     # objects to be considered `==`.
     return esc(quote
-        Base.@__doc__$typ
+        Base.@__doc__ $typ
         function Base.hash(x::$(type_name), h::UInt)
             $(foldl((r, a) -> :(hash(x.$a, $r)), member_names; init = :(hash($(QuoteNode(type_name)), h))))
         end
