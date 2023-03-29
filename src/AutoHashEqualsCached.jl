@@ -1,15 +1,15 @@
+# SPDX-License-Identifier: MIT
+
 module AutoHashEqualsCached
 
 export @auto_hash_equals_cached, @auto_hash_equals
 
-"""
-  `_show_default_auto_hash_equals_cached` is just like `Base._show_default(io, x)`,
-  except it ignores fields named `_cached_hash`.  This function is called in the
-  implementation of `T._show_default` for types `T` annotated with
-  `@auto_hash_equals_cached`.  This is ultimately used in the implementation of
-  `Base.show`.  This specialization ensures that showing circular data structures does not
-  result in infinite recursion.
-"""
+# `_show_default_auto_hash_equals_cached` is just like `Base._show_default(io, x)`,
+# except it ignores fields named `_cached_hash`.  This function is called in the
+# implementation of `T._show_default` for each type `T` annotated with
+# `@auto_hash_equals_cached`.  This is ultimately used in the implementation of
+# `Base.show`.  This specialization ensures that showing circular data structures does not
+# result in infinite recursion.
 function _show_default_auto_hash_equals_cached(io::IO, @nospecialize(x))
     t = typeof(x)
     show(io, Base.inferencebarrier(t)::DataType)
@@ -34,9 +34,7 @@ function _show_default_auto_hash_equals_cached(io::IO, @nospecialize(x))
     print(io,')')
 end
 
-"""
-Find the first struct declaration buried in the Expr.
-"""
+# Find the first struct declaration buried in the Expr.
 get_struct_decl(typ) = nothing
 function get_struct_decl(typ::Expr)
     if typ.head == :struct
@@ -61,11 +59,11 @@ end
 unpack_name(node) = node
 function unpack_name(node::Expr)
     if node.head == :macrocall
-        unpack_name(node.args[3])
+        return unpack_name(node.args[3])
     elseif node.head in (:(<:), :(::))
-        unpack_name(node.args[1])
+        return unpack_name(node.args[1])
     else
-        node
+        return node
     end
 end
 
@@ -78,9 +76,9 @@ function unpack_type_name(n::Expr)
         where_list = n.args[2:length(n.args)]
         type_params = map(unpack_name, where_list)
         full_type_name = Expr(:curly, type_name, type_params...)
-        (type_name, full_type_name, where_list)
+        return (type_name, full_type_name, where_list)
     elseif n.head == :(<:)
-        unpack_type_name(n.args[1])
+        return unpack_type_name(n.args[1])
     else
         error("macro @auto_hash_equals_cached applied to type with unexpected signature: $n")
     end
@@ -105,6 +103,10 @@ function get_fields(struct_decl::Expr)
             push!(member_decls, b)
         elseif b.head == :macrocall
             add_field(b.args[3])
+        elseif b.head == :function || b.head == :equals && (b.args[1] isa Expr && b.args[1].head in (:call, :where))
+            # :function, :equals:call, :equals:where are defining functions - inner constructors
+            # we don't want to permit that, as it would interfere with us producing them.
+            error("macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
         end
     end
     function add_fields(b::Expr)
@@ -116,9 +118,21 @@ function get_fields(struct_decl::Expr)
 
     @assert (struct_decl.args[3].head == :block)
     add_fields(struct_decl.args[3])
-    (member_names, member_decls)
+    return (member_names, member_decls)
 end
 
+"""
+    @auto_hash_equals_cached struct Foo ... end
+
+Causes the struct to have an additional hidden field named `_cached_hash` that is computed and stored at the time of construction.
+Produces constructors and specializes the behavior of `Base.show` to maintain the illusion that the field does not exist.
+Two different instantiations of a generic type are considered not equal.
+
+Also produces specializations of `Base.hash` and `Base.==`:
+
+- `Base.==` is implemented as an elementwise test for `isequal`.
+- `Base.hash` just returns the cached hash value.
+"""
 macro auto_hash_equals_cached(typ::Expr)
     struct_decl = get_struct_decl(typ)
     @assert struct_decl.head == :struct
@@ -138,11 +152,11 @@ macro auto_hash_equals_cached(typ::Expr)
     # Add the internal constructor
     if isnothing(where_list)
         push!(type_body, :(function $(full_type_name)($(member_decls...))
-            new($(member_names...), $(foldl((r, a) -> :(hash($a, $r)), member_names; init = :(hash($(QuoteNode(type_name)))))))
+            new($(member_names...), $(foldl((r, a) -> :(hash($a, $r)), member_names; init = :(hash($full_type_name)))))
         end))
     else
         push!(type_body, :(function $(full_type_name)($(member_decls...)) where {$(where_list...)}
-            new($(member_names...), $(foldl((r, a) -> :(hash($a, $r)), member_names; init = :(hash($(QuoteNode(type_name)))))))
+            new($(member_names...), $(foldl((r, a) -> :(hash($a, $r)), member_names; init = :(hash($full_type_name)))))
         end))
     end
 
@@ -184,9 +198,21 @@ macro auto_hash_equals_cached(typ::Expr)
         end))
     end
 
-    result
+    return result
 end
 
+"""
+    @auto_hash_equals struct Foo ... end
+
+Produces specializations of `Base.hash` and `Base.==`:
+
+- `Base.==` is implemented as an elementwise test for `isequal`.
+- `Base.hash` combines the elementwise hash code of the fields with the hash code of the type's simple name.
+
+The hash code and `==` implementations ignore type parameters, so that `Box{Int}(1)` will be considered
+`equals` to `Box{Any}(1)`.
+This is for compatibility with the package `AutoHashEquals`.
+"""
 macro auto_hash_equals(typ::Expr)
     struct_decl = get_struct_decl(typ)
     @assert struct_decl.head == :struct
@@ -196,14 +222,15 @@ macro auto_hash_equals(typ::Expr)
 
     (member_names, _) = get_fields(struct_decl)
 
-    esc(quote
+    # for compatibility with [AutoHashEquals.jl](https://github.com/andrewcooke/AutoHashEquals.jl)
+    # we do not require that the types (specifically, the type arguments) are the same for two
+    # objects to be considered `==`.
+    return esc(quote
         Base.@__doc__$typ
         function Base.hash(x::$(type_name), h::UInt)
             $(foldl((r, a) -> :(hash(x.$a, $r)), member_names; init = :(hash($(QuoteNode(type_name)), h))))
         end
         function Base.:(==)(a::$(type_name), b::$(type_name))
-            # for compatibility with [AutoHashEquals.jl](https://github.com/andrewcooke/AutoHashEquals.jl)
-            # we do not require that the types (specifically, the type arguments) are the same.
             $(foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :true))
         end
     end)

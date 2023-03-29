@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 module runtests
 
 using AutoHashEqualsCached: @auto_hash_equals, @auto_hash_equals_cached
@@ -49,9 +51,9 @@ end
         @testset "empty struct" begin
             @auto_hash_equals_cached struct T35 end
             @test T35() isa T35
-            @test hash(T35()) == hash(:T35)
-            @test hash(T35(), UInt(0)) == hash(hash(:T35), UInt(0))
-            @test hash(T35(), UInt(1)) == hash(hash(:T35), UInt(1))
+            @test hash(T35()) == hash(T35)
+            @test hash(T35(), UInt(0)) == hash(hash(T35), UInt(0))
+            @test hash(T35(), UInt(1)) == hash(hash(T35), UInt(1))
             @test T35() == T35()
             @test T35() == serialize_and_deserialize(T35())
             @test hash(T35()) == hash(serialize_and_deserialize(T35()))
@@ -63,7 +65,7 @@ end
                 x; y
             end
             @test T48(1, :x) isa T48
-            @test hash(T48(1, :x)) == hash(:x,hash(1,hash(:T48)))
+            @test hash(T48(1, :x)) == hash(:x,hash(1,hash(T48)))
             @test T48(1, :x) == T48(1, :x)
             @test T48(1, :x) != T48(2, :x)
             @test hash(T48(1, :x)) != hash(T48(2, :x))
@@ -80,8 +82,8 @@ end
                 y::G
             end
             @test T63{Symbol}(1, :x) isa T63
-            @test hash(T63{Symbol}(1, :x)) == hash(:x,hash(1,hash(:T63)))
-            @test hash(T63{Symbol}(1, :x)) == hash(T63{Any}(1, :x))
+            @test hash(T63{Symbol}(1, :x)) == hash(:x,hash(1,hash(T63{Symbol})))
+            @test hash(T63{Symbol}(1, :x)) != hash(T63{Any}(1, :x))
             @test T63{Symbol}(1, :x) != T63{Any}(1, :x) # note: type args are significant
             @test T63{Symbol}(1, :x) == T63{Symbol}(1, :x)
             @test T63{Symbol}(1, :x) != T63{Symbol}(2, :x)
@@ -115,8 +117,8 @@ end
             @test T107a(1) == T107a(1)
             @test T107a(1) == serialize_and_deserialize(T107a(1))
             @test T107a(1) != T107a(2)
-            @test hash(T107a(1)) == hash(1, hash(:T107a))
-            @test hash(T107a("x")) == hash("x", hash(:T107a))
+            @test hash(T107a(1)) == hash(1, hash(T107a{Int}))
+            @test hash(T107a("x")) == hash("x", hash(T107a{String}))
             @test hash(T107a(1)) != hash(T107b(1))
             @test hash(T107a(1)) != hash(T107a(2))
         end
@@ -127,7 +129,7 @@ end
                 y
             end
             @test T116(1, :x) isa T116
-            @test hash(T116(1, :x)) == hash(:x,hash(1,hash(:T116)))
+            @test hash(T116(1, :x)) == hash(:x,hash(1,hash(T116)))
             @test T116(1, :x) == T116(1, :x)
             @test T116(1, :x) != T116(2, :x)
             @test hash(T116(1, :x)) != hash(T116(2, :x))
@@ -143,7 +145,7 @@ end
                 y
             end
             @test T132(1, :x) isa T132
-            @test hash(T132(1, :x)) == hash(:x,hash(1,hash(:T132)))
+            @test hash(T132(1, :x)) == hash(:x,hash(1,hash(T132)))
             @test T132(1, :x) == T132(1, :x)
             @test T132(1, :x) != T132(2, :x)
             @test hash(T132(1, :x)) != hash(T132(2, :x))
@@ -159,7 +161,7 @@ end
                 @noop y
             end
             @test T148(1, :x) isa T148
-            @test hash(T148(1, :x)) == hash(:x,hash(1,hash(:T148)))
+            @test hash(T148(1, :x)) == hash(:x,hash(1,hash(T148)))
             @test T148(1, :x) == T148(1, :x)
             @test T148(1, :x) != T148(2, :x)
             @test hash(T148(1, :x)) != hash(T148(2, :x))
