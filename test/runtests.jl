@@ -4,8 +4,8 @@ module runtests
 
 using AutoHashEqualsCached: @auto_hash_equals, @auto_hash_equals_cached
 using Markdown: plain
-using Serialization: serialize, deserialize, IOBuffer, seekstart
-using Test: @testset, @test
+using Serialization
+using Test
 
 function serialize_and_deserialize(x)
     buf = IOBuffer()
@@ -156,41 +156,76 @@ end
         end
 
         @testset "macro applied to members" begin
-            @auto_hash_equals_cached @noop struct T148
+            @auto_hash_equals_cached @noop struct T135
                 @noop x::Int
                 @noop y
             end
-            @test T148(1, :x) isa T148
-            @test hash(T148(1, :x)) == hash(:x,hash(1,hash(T148)))
-            @test T148(1, :x) == T148(1, :x)
-            @test T148(1, :x) != T148(2, :x)
-            @test hash(T148(1, :x)) != hash(T148(2, :x))
-            @test T148(1, :x) != T148(1, :y)
-            @test hash(T148(1, :x)) != hash(T148(1, :y))
-            @test T148(1, :x) == serialize_and_deserialize(T148(1, :x))
-            @test hash(T148(1, :x)) == hash(serialize_and_deserialize(T148(1, :x)))
+            @test T135(1, :x) isa T135
+            @test hash(T135(1, :x)) == hash(:x,hash(1,hash(T135)))
+            @test T135(1, :x) == T135(1, :x)
+            @test T135(1, :x) != T135(2, :x)
+            @test hash(T135(1, :x)) != hash(T135(2, :x))
+            @test T135(1, :x) != T135(1, :y)
+            @test hash(T135(1, :x)) != hash(T135(1, :y))
+            @test T135(1, :x) == serialize_and_deserialize(T135(1, :x))
+            @test hash(T135(1, :x)) == hash(serialize_and_deserialize(T135(1, :x)))
         end
 
         @testset "contained NaN values compare equal" begin
-            @auto_hash_equals_cached struct T155
+            @auto_hash_equals_cached struct T140
                 x
             end
             nan = 0.0 / 0.0
             @test nan != nan
-            @test T155(nan) == T155(nan)
+            @test T140(nan) == T140(nan)
         end
 
         @testset "ensure circular data structures, produced by hook or by crook, do not blow the stack" begin
-            @auto_hash_equals_cached struct T157
+            @auto_hash_equals_cached struct T145
                 a::Array{Any,1}
             end
-            t::T157 = T157(Any[1])
+            t::T145 = T145(Any[1])
             t.a[1] = t
             @test hash(t) != 0
             @test t == t
-            @test "$t" == "$(T157)(Any[$(T157)(#= circular reference @-2 =#)])"
+            @test "$t" == "$(T145)(Any[$(T145)(#= circular reference @-2 =#)])"
         end
 
+        @testset "give an error if the struct contains internal constructors 1" begin
+            @test_throws "should not be used on a struct that declares an inner constructor" begin
+                @macroexpand @auto_hash_equals_cached struct T150
+                    T150() = new()
+                end
+            end
+        end
+
+        @testset "give an error if the struct contains internal constructors 2" begin
+            @test_throws "should not be used on a struct that declares an inner constructor" begin
+                @macroexpand @auto_hash_equals_cached struct T152
+                    T152() where {T} = new()
+                end
+            end
+        end
+
+        @testset "give an error if the struct contains internal constructors 3" begin
+            @test_throws "should not be used on a struct that declares an inner constructor" begin
+                @macroexpand @auto_hash_equals_cached struct T154
+                    function T154()
+                        new()
+                    end
+                end
+            end
+        end
+
+        @testset "give an error if the struct contains internal constructors 4" begin
+            @test_throws "should not be used on a struct that declares an inner constructor" begin
+                @macroexpand @auto_hash_equals_cached struct T156
+                    function T156() where {T}
+                        new()
+                    end
+                end
+            end
+        end
     end
 
     @testset "tests for @auto_hash_equals" begin
@@ -347,6 +382,12 @@ end
             nan = 0.0 / 0.0
             @test nan != nan
             @test T330(nan) == T330(nan)
+        end
+
+        @testset "give no error if the struct contains internal constructors" begin
+            @auto_hash_equals struct T350
+                T350() = new()
+            end
         end
 
     end

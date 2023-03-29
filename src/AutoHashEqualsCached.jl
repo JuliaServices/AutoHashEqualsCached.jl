@@ -84,7 +84,7 @@ function unpack_type_name(n::Expr)
     end
 end
 
-function get_fields(struct_decl::Expr)
+function get_fields(struct_decl::Expr; prevent_inner_constructors=false)
     member_names = Vector{Symbol}()
     member_decls = Vector()
 
@@ -103,10 +103,11 @@ function get_fields(struct_decl::Expr)
             push!(member_decls, b)
         elseif b.head == :macrocall
             add_field(b.args[3])
-        elseif b.head == :function || b.head == :equals && (b.args[1] isa Expr && b.args[1].head in (:call, :where))
+        elseif b.head == :function || b.head == :(=) && (b.args[1] isa Expr && b.args[1].head in (:call, :where))
             # :function, :equals:call, :equals:where are defining functions - inner constructors
-            # we don't want to permit that, as it would interfere with us producing them.
-            error("macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
+            # we don't want to permit that if it would interfere with us producing them.
+            prevent_inner_constructors &&
+                error("macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
         end
     end
     function add_fields(b::Expr)
@@ -144,7 +145,7 @@ macro auto_hash_equals_cached(typ::Expr)
     (type_name, full_type_name, where_list) = unpack_type_name(struct_decl.args[2])
     @assert type_name isa Symbol
 
-    (member_names, member_decls) = get_fields(struct_decl)
+    (member_names, member_decls) = get_fields(struct_decl; prevent_inner_constructors=true)
 
     # Add the cache field to the body of the struct
     push!(type_body, :(_cached_hash::UInt))
