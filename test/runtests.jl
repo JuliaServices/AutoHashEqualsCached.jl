@@ -191,7 +191,14 @@ end
             @test "$t" == "$(T145)(Any[$(T145)(#= circular reference @-2 =#)])"
         end
 
-        internal_construcor_error = ErrorException("macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
+        # @test_throws requires a type before v1.8.
+        internal_construcor_error =
+            if VERSION >= v"1.8"
+                ErrorException("macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
+            else
+                ErrorException
+            end
+
         @testset "give an error if the struct contains internal constructors 1" begin
             @test_throws internal_construcor_error begin
                 @macroexpand @auto_hash_equals_cached struct T150
