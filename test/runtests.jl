@@ -196,7 +196,7 @@ end
             if VERSION >= v"1.8"
                 ErrorException("macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
             else
-                ErrorException
+                LoadError
             end
 
         @testset "give an error if the struct contains internal constructors 1" begin
