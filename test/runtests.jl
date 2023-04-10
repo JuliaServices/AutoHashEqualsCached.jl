@@ -6,7 +6,7 @@ using AutoHashEqualsCached: @auto_hash_equals, @auto_hash_equals_cached
 using Markdown: plain
 using Serialization
 using Test
-using Rematch: Rematch, @match, MatchFailure
+using Rematch: @match, MatchFailure
 
 function serialize_and_deserialize(x)
     buf = IOBuffer()
