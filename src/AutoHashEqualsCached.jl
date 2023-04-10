@@ -2,6 +2,8 @@
 
 module AutoHashEqualsCached
 
+using Rematch
+
 export @auto_hash_equals_cached, @auto_hash_equals
 
 # `_show_default_auto_hash_equals_cached` is just like `Base._show_default(io, x)`,
@@ -176,6 +178,10 @@ macro auto_hash_equals_cached(typ::Expr)
             # note `_show_default_auto_hash_equals_cached` is not escaped.
             # it should be bound to the one defined in *this* module.
             _show_default_auto_hash_equals_cached(io, x)
+        end
+        # Make Rematch ignore the field that caches the hash code
+        function Rematch.evaluated_fieldcount(::Type{$(esc(:($type_name)))})
+            $(length(member_names))
         end
     end
 
