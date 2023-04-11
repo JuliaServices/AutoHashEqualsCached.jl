@@ -244,6 +244,7 @@ end
                 x::T
             end
             @test S269{Int}(2.0).x === 2
+            @test S269(2.0).x === 2.0
         end
     end
 
