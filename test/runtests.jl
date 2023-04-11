@@ -192,7 +192,7 @@ end
         end
 
         # @test_throws requires a type before v1.8.
-        internal_construcor_error =
+        internal_constructor_error =
             if VERSION >= v"1.8"
                 ErrorException("macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
             else
@@ -200,7 +200,7 @@ end
             end
 
         @testset "give an error if the struct contains internal constructors 1" begin
-            @test_throws internal_construcor_error begin
+            @test_throws internal_constructor_error begin
                 @macroexpand @auto_hash_equals_cached struct T150
                     T150() = new()
                 end
@@ -208,7 +208,7 @@ end
         end
 
         @testset "give an error if the struct contains internal constructors 2" begin
-            @test_throws internal_construcor_error begin
+            @test_throws internal_constructor_error begin
                 @macroexpand @auto_hash_equals_cached struct T152
                     T152() where {T} = new()
                 end
@@ -216,7 +216,7 @@ end
         end
 
         @testset "give an error if the struct contains internal constructors 3" begin
-            @test_throws internal_construcor_error begin
+            @test_throws internal_constructor_error begin
                 @macroexpand @auto_hash_equals_cached struct T154
                     function T154()
                         new()
@@ -226,13 +226,25 @@ end
         end
 
         @testset "give an error if the struct contains internal constructors 4" begin
-            @test_throws internal_construcor_error begin
+            @test_throws internal_constructor_error begin
                 @macroexpand @auto_hash_equals_cached struct T156
                     function T156() where {T}
                         new()
                     end
                 end
             end
+        end
+
+        @testset "check compatibility with default constructor" begin
+            @auto_hash_equals_cached struct S268
+                x::Int
+            end
+            @test S268(2.0).x === 2
+            @auto_hash_equals_cached struct S269{T <: Any}
+                x::T
+            end
+            @test S269{Int}(2.0).x === 2
+            @test S269(2.0).x === 2.0
         end
     end
 
