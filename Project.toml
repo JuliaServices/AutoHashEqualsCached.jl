@@ -1,7 +1,10 @@
 name = "AutoHashEqualsCached"
 uuid = "887ad303-ad3a-4bc5-965e-507c643d6945"
 authors = ["Neal Gafter <neal@gafter.com> and contributors"]
-version = "0.1"
+version = "0.1.0"
+
+[deps]
+Rematch = "bfecab0d-fd4d-5014-a23f-56c5fae6447a"
 
 [compat]
 julia = "1.3"
