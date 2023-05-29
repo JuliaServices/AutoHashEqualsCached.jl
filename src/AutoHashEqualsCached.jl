@@ -185,18 +185,20 @@ macro auto_hash_equals_cached(typ::Expr)
         end
     end
 
+    equalty_impl = foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :(a._cached_hash == b._cached_hash))
+
     if isnothing(where_list)
         # add == for non-generic types
         push!(result.args, esc(quote
             function Base.:(==)(a::$type_name, b::$type_name)
-                $(foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :(a._cached_hash == b._cached_hash)))
+                $equalty_impl
             end
         end))
     else
         # We require the type be the same (including type arguments) for two instances to be equal
         push!(result.args, esc(quote
             function Base.:(==)(a::$full_type_name, b::$full_type_name) where {$(where_list...)}
-                $(foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :(a._cached_hash == b._cached_hash)))
+                $equalty_impl
             end
         end))
         # for generic types, we add an external constructor to perform ctor type inference:
@@ -229,6 +231,12 @@ macro auto_hash_equals(typ::Expr)
 
     (member_names, _) = get_fields(struct_decl)
 
+    equalty_impl = foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :true)
+    if struct_decl.args[1]
+        # mutable structs can efficiently be compared by reference
+        equalty_impl = :(a === b || $equalty_impl)
+    end
+
     # for compatibility with [AutoHashEquals.jl](https://github.com/andrewcooke/AutoHashEquals.jl)
     # we do not require that the types (specifically, the type arguments) are the same for two
     # objects to be considered `==`.
@@ -238,7 +246,7 @@ macro auto_hash_equals(typ::Expr)
             $(foldl((r, a) -> :(hash(x.$a, $r)), member_names; init = :(hash($(QuoteNode(type_name)), h))))
         end
         function Base.:(==)(a::$type_name, b::$type_name)
-            $(foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :true))
+            $equalty_impl
         end
     end)
 end
