@@ -37,17 +37,19 @@ function _show_default_auto_hash_equals_cached(io::IO, @nospecialize(x))
 end
 
 # Find the first struct declaration buried in the Expr.
-get_struct_decl(typ) = nothing
-function get_struct_decl(typ::Expr)
+get_struct_decl(__source__, typ) = nothing
+function get_struct_decl(__source__, typ::Expr)
     if typ.head === :struct
         return typ
     elseif typ.head === :macrocall
-        return get_struct_decl(typ.args[3])
+        return get_struct_decl(__source__, typ.args[3])
     elseif typ.head === :block
         # get the first struct decl in the block
         for x in typ.args
-            if x.head === :macrocall || x.head === :struct || x.head === :block
-                result = get_struct_decl(x)
+            if x isa LineNumberNode
+                __source__ = x
+            elseif x isa Expr && (x.head === :macrocall || x.head === :struct || x.head === :block)
+                result = get_struct_decl(__source__, x)
                 if !isnothing(result)
                     return result
                 end
@@ -55,7 +57,7 @@ function get_struct_decl(typ::Expr)
         end
     end
 
-    error("macro @auto_hash_equals_cached should only be applied to a struct")
+    error("$(__source__.file):$(__source__.line): macro @auto_hash_equals_cached should only be applied to a struct")
 end
 
 unpack_name(node) = node
@@ -69,58 +71,62 @@ function unpack_name(node::Expr)
     end
 end
 
-unpack_type_name(n::Symbol) = (n, n, nothing)
-function unpack_type_name(n::Expr)
+unpack_type_name(__source__, n::Symbol) = (n, n, nothing)
+function unpack_type_name(__source__, n::Expr)
     if n.head === :curly
         type_name = n.args[1]
         type_name isa Symbol ||
-            error("macro @auto_hash_equals_cached applied to type with invalid signature: $type_name")
+            error("$(__source__.file):$(__source__.line): macro @auto_hash_equals_cached applied to type with invalid signature: $type_name")
         where_list = n.args[2:length(n.args)]
         type_params = map(unpack_name, where_list)
         full_type_name = Expr(:curly, type_name, type_params...)
         return (type_name, full_type_name, where_list)
     elseif n.head === :(<:)
-        return unpack_type_name(n.args[1])
+        return unpack_type_name(__source__, n.args[1])
     else
-        error("macro @auto_hash_equals_cached applied to type with unexpected signature: $n")
+        error("$(__source__.file):$(__source__.line): macro @auto_hash_equals_cached applied to type with unexpected signature: $n")
     end
 end
 
-function get_fields(struct_decl::Expr; prevent_inner_constructors=false)
+function get_fields(__source__, struct_decl::Expr; prevent_inner_constructors=false)
     member_names = Vector{Symbol}()
     member_decls = Vector()
 
-    add_field(b) = nothing
-    function add_field(b::Symbol)
+    add_field(__source__, b) = nothing
+    function add_field(__source__, b::Symbol)
         push!(member_names, b)
         push!(member_decls, b)
     end
-    function add_field(b::Expr)
+    function add_field(__source__, b::Expr)
         if b.head === :block
             add_fields(field)
         elseif b.head === :const
-            add_field(b.args[1])
+            add_field(__source__, b.args[1])
         elseif b.head === :(::) && b.args[1] isa Symbol
             push!(member_names, b.args[1])
             push!(member_decls, b)
         elseif b.head === :macrocall
-            add_field(b.args[3])
+            add_field(__source__, b.args[3])
         elseif b.head === :function || b.head === :(=) && (b.args[1] isa Expr && b.args[1].head in (:call, :where))
             # :function, :equals:call, :equals:where are defining functions - inner constructors
             # we don't want to permit that if it would interfere with us producing them.
             prevent_inner_constructors &&
-                error("macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
+                error("$(__source__.file):$(__source__.line): macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
         end
     end
-    function add_fields(b::Expr)
+    function add_fields(__source__, b::Expr)
         @assert b.head === :block
         for field in b.args
-            add_field(field)
+            if field isa LineNumberNode
+                __source__ = field
+            else
+                add_field(__source__, field)
+            end
         end
     end
 
     @assert (struct_decl.args[3].head === :block)
-    add_fields(struct_decl.args[3])
+    add_fields(__source__, struct_decl.args[3])
     return (member_names, member_decls)
 end
 
@@ -137,17 +143,17 @@ Also produces specializations of `Base.hash` and `Base.==`:
 - `Base.hash` just returns the cached hash value.
 """
 macro auto_hash_equals_cached(typ::Expr)
-    struct_decl = get_struct_decl(typ)
+    struct_decl = get_struct_decl(__source__, typ)
     @assert struct_decl.head === :struct
     type_body = struct_decl.args[3].args
 
     !struct_decl.args[1] ||
-        error("$(__source__.file):$( _source__.line): macro @auto_hash_equals_cached should only be applied to a non-mutable struct.")
+        error("$(__source__.file):$(__source__.line): macro @auto_hash_equals_cached should only be applied to a non-mutable struct.")
 
-    (type_name, full_type_name, where_list) = unpack_type_name(struct_decl.args[2])
+    (type_name, full_type_name, where_list) = unpack_type_name(__source__, struct_decl.args[2])
     @assert type_name isa Symbol
 
-    (member_names, member_decls) = get_fields(struct_decl; prevent_inner_constructors=true)
+    (member_names, member_decls) = get_fields(__source__, struct_decl; prevent_inner_constructors=true)
 
     # Add the cache field to the body of the struct
     push!(type_body, :(_cached_hash::UInt))
@@ -223,13 +229,13 @@ The hash code and `==` implementations ignore type parameters, so that `Box{Int}
 This is for compatibility with the package `AutoHashEquals`.
 """
 macro auto_hash_equals(typ::Expr)
-    struct_decl = get_struct_decl(typ)
+    struct_decl = get_struct_decl(__source__, typ)
     @assert struct_decl.head === :struct
 
-    (type_name, _, _) = unpack_type_name(struct_decl.args[2])
+    (type_name, _, _) = unpack_type_name(__source__, struct_decl.args[2])
     @assert type_name isa Symbol
 
-    (member_names, _) = get_fields(struct_decl)
+    (member_names, _) = get_fields(__source__, struct_decl)
 
     equalty_impl = foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :true)
     if struct_decl.args[1]
