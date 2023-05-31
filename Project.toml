@@ -5,6 +5,7 @@ version = "0.1.1"
 
 [deps]
 Rematch = "bfecab0d-fd4d-5014-a23f-56c5fae6447a"
+Rematch2 = "351a7294-9038-49b6-b9cf-e076b05af63f"
 
 [compat]
 julia = "1.3"

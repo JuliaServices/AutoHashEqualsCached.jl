@@ -142,7 +142,7 @@ macro auto_hash_equals_cached(typ::Expr)
     type_body = struct_decl.args[3].args
 
     !struct_decl.args[1] ||
-        error("macro @auto_hash_equals_cached should only be applied to a non-mutable struct")
+        error("$(__source__.file):$( _source__.line): macro @auto_hash_equals_cached should only be applied to a non-mutable struct.")
 
     (type_name, full_type_name, where_list) = unpack_type_name(struct_decl.args[2])
     @assert type_name isa Symbol
