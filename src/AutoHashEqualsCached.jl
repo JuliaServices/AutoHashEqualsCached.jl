@@ -2,9 +2,15 @@
 
 module AutoHashEqualsCached
 
-using Rematch
-
 export @auto_hash_equals_cached, @auto_hash_equals
+
+function if_has_package(action::Function, name::String, uuid::Base.UUID)
+    pkgid = Base.PkgId(uuid, name)
+    if Base.root_module_exists(pkgid)
+        pkg = Base.root_module(pkgid)
+        action(pkg)
+    end
+end
 
 # `_show_default_auto_hash_equals_cached` is just like `Base._show_default(io, x)`,
 # except it ignores fields named `_cached_hash`.  This function is called in the
@@ -171,24 +177,38 @@ macro auto_hash_equals_cached(typ::Expr)
 
     # add functions for hash(x), hash(x, h), and Base._show_default
     result = quote
+        $__source__
         Base.@__doc__ $(esc(typ))
         $(esc(quote
-            function Base.hash(x::$type_name)
+            function $Base.hash(x::$type_name)
                 x._cached_hash
             end
-            function Base.hash(x::$type_name, h::UInt)
+            function $Base.hash(x::$type_name, h::UInt)
                 hash(x._cached_hash, h)
             end
         end))
-        function Base._show_default(io::IO, x::$(esc(:($type_name))))
-            # note `_show_default_auto_hash_equals_cached` is not escaped.
-            # it should be bound to the one defined in *this* module.
-            _show_default_auto_hash_equals_cached(io, x)
+        function $Base._show_default(io::IO, x::$(esc(:($type_name))))
+            $_show_default_auto_hash_equals_cached(io, x)
         end
-        # Make Rematch ignore the field that caches the hash code
-        function Rematch.evaluated_fieldcount(::Type{$(esc(:($type_name)))})
-            $(length(member_names))
-        end
+
+        $(if_has_package("Rematch", Base.UUID("bfecab0d-fd4d-5014-a23f-56c5fae6447a")) do pkg
+            quote
+                # Make Rematch ignore the field that caches the hash code
+                function $pkg.evaluated_fieldcount(::Type{$(esc(:($type_name)))})
+                    $(length(member_names))
+                end
+            end
+        end)
+        $(if_has_package("Rematch2", Base.UUID("351a7294-9038-49b6-b9cf-e076b05af63f")) do pkg
+            quote
+                # Make Rematch2 ignore the field that caches the hash code
+                if :fieldnames in $names($pkg; all=true)
+                    function $pkg.fieldnames(::Type{$(esc(:($type_name)))})
+                        $((member_names...,))
+                    end
+                end
+            end
+        end)
     end
 
     equalty_impl = foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :(a._cached_hash == b._cached_hash))
@@ -196,14 +216,14 @@ macro auto_hash_equals_cached(typ::Expr)
     if isnothing(where_list)
         # add == for non-generic types
         push!(result.args, esc(quote
-            function Base.:(==)(a::$type_name, b::$type_name)
+            function $Base.:(==)(a::$type_name, b::$type_name)
                 $equalty_impl
             end
         end))
     else
         # We require the type be the same (including type arguments) for two instances to be equal
         push!(result.args, esc(quote
-            function Base.:(==)(a::$full_type_name, b::$full_type_name) where {$(where_list...)}
+            function $Base.:(==)(a::$full_type_name, b::$full_type_name) where {$(where_list...)}
                 $equalty_impl
             end
         end))
@@ -248,10 +268,10 @@ macro auto_hash_equals(typ::Expr)
     # objects to be considered `==`.
     return esc(quote
         Base.@__doc__ $typ
-        function Base.hash(x::$type_name, h::UInt)
+        function $Base.hash(x::$type_name, h::UInt)
             $(foldl((r, a) -> :(hash(x.$a, $r)), member_names; init = :(hash($(QuoteNode(type_name)), h))))
         end
-        function Base.:(==)(a::$type_name, b::$type_name)
+        function $Base.:(==)(a::$type_name, b::$type_name)
             $equalty_impl
         end
     end)
