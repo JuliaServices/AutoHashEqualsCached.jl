@@ -194,7 +194,7 @@ end
 
         # @test_throws requires a type before v1.8.
         internal_constructor_error =
-            if VERSION >= v"1.8"
+            if VERSION >= v"1.7"
                 ErrorException
             else
                 LoadError
