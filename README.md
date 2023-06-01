@@ -30,6 +30,16 @@ However, there are a few enhancements beyond what is provided by [AutoHashEquals
 
 - It handles empty structs without error
 - You can use it either before or after another macro.
+- You can specify the hash function to be implemented, by naming it before the struct definition:
+
+```julia
+@auto_hash_equals SomePackage.myhash struct Foo
+    x
+    y
+end
+```
+
+In this case the macro implements both `SomePackage.myhash` and `Base.hash` for `Foo`.`
 
 For compatibility with [AutoHashEquals](https://github.com/andrewcooke/AutoHashEquals.jl), we do not take the type arguments of a generic type into account in `==`.  So a `Box{Int}(1)` will test equal to a `Box{Any}(1)`.
 
@@ -69,3 +79,14 @@ We use `isequal` so that a floating-point `NaN` compares equal to itself.  The g
 The definition of `_show_default(io,x)` prevents display of the `_cached_hash` field while preserving the behavior of `Base.show(...)` that handles self-recursive data structures without a stack overflow.
 
 We provide an external constructor for generic types so that you get the same type inference behavior you would get in the absence of this macro.  Specifically, you can write `Point(1, 2)` to get an object of type `Point{Int, Int}`.
+
+As with @auto_hash_equals, you can specify the hash function to be implemented:
+
+```julia
+@auto_hash_equals_cached SomePackage.myhash struct Foo
+    x
+    y
+end
+```
+
+In this case the macro implements both `SomePackage.myhash` and `Base.hash` for `Foo`.`
