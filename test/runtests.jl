@@ -7,6 +7,7 @@ using Markdown: plain
 using Serialization
 using Test
 using Rematch: Rematch, @match, MatchFailure
+using Random
 
 function serialize_and_deserialize(x)
     buf = IOBuffer()
@@ -20,6 +21,14 @@ macro noop(x)
        Base.@__doc__$(x)
     end)
 end
+
+# some custom hash function
+function myhash end
+myhash(o::T, h::UInt) where {T} = error("myhash not implemented for $T")
+myhash(o::UInt, h::UInt) = xor(o, h)
+myhash(o::Symbol, h::UInt) = Base.hash(o, h)
+myhash(o::Type, h::UInt) = myhash(o.name.name, h)
+myhash(o) = myhash(o, UInt(0x0))
 
 @testset "AutoHashEqualsCached.jl" begin
 
@@ -278,6 +287,16 @@ end
             @test S269{Int}(2.0).x === 2
             @test S269(2.0).x === 2.0
         end
+
+        @testset "check that we can define custom hash function" begin
+            @auto_hash_equals_cached runtests.myhash struct S275
+                x::UInt
+            end
+            q, r = rand(RandomDevice(), UInt, 2)
+            @test myhash(S275(q)) == hash(S275(q))
+            @test myhash(S275(q), r) == hash(S275(q), r)
+            r !== 0 && @test myhash(S275(q), r) != hash(S275(q))
+        end
     end
 
     @testset "tests for @auto_hash_equals" begin
@@ -442,6 +461,15 @@ end
             end
         end
 
+        @testset "check that we can define custom hash function" begin
+            @auto_hash_equals runtests.myhash struct S470
+                x::UInt
+            end
+            q, r = rand(RandomDevice(), UInt, 2)
+            @test myhash(S470(q)) == hash(S470(q))
+            @test myhash(S470(q), r) == hash(S470(q), r)
+            r !== 0 && @test myhash(S275(q), r) != hash(S275(q))
+        end
     end
 
 end

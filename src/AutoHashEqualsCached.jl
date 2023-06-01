@@ -137,13 +137,12 @@ function get_fields(__source__, struct_decl::Expr; prevent_inner_constructors=fa
 end
 
 function check_valid_alt_hash_name(__source__, alt_hash_name)
-    alt_hash_name === nothing || alt_hash_name isa Symbol || is_expr(alt_hash_name, :.) ||
+    alt_hash_name === nothing || alt_hash_name isa Symbol || Base.is_expr(alt_hash_name, :.) ||
         error("$(__source__.file):$(__source__.line): invalid alternate hash function name: $alt_hash_name")
 end
 
 function auto_hash_equals_impl(__source__::LineNumberNode, alt_hash_name, typ::Expr)
     check_valid_alt_hash_name(__source__, alt_hash_name)
-    alt_hash_name === nothing || error("$(__source__.file):$(__source__.line): alternate hash functions not implemented.")
     struct_decl = get_struct_decl(__source__, typ)
     @assert struct_decl.head === :struct
 
@@ -158,10 +157,21 @@ function auto_hash_equals_impl(__source__::LineNumberNode, alt_hash_name, typ::E
         equalty_impl = :(a === b || $equalty_impl)
     end
 
-    result = Expr(:block, __source__, :(Base.@__doc__ $(esc(typ))))
-    push!(result.args, esc(:(function $Base.hash(x::$type_name, h::UInt)
-        $(foldl((r, a) -> :(hash(x.$a, $r)), member_names; init = :(hash($(QuoteNode(type_name)), h))))
+    result = Expr(:block, __source__, esc(:(Base.@__doc__ $typ)), __source__)
+
+    # add function for hash(x, h)
+    base_hash_name = :($Base.hash)
+    defined_hash_name = alt_hash_name === nothing ? base_hash_name : alt_hash_name
+    compute_hash = foldl((r, a) -> :($defined_hash_name(x.$a, $r)), member_names; init = :($defined_hash_name($(QuoteNode(type_name)), h)))
+    push!(result.args, esc(:(function $defined_hash_name(x::$type_name, h::UInt)
+        $compute_hash
         end)))
+    if defined_hash_name != base_hash_name
+        # add function for Base.hash(x, h)
+        push!(result.args, esc(:(function $base_hash_name(x::$type_name, h::UInt)
+            $defined_hash_name(x, h)
+            end)))
+    end
 
     # for compatibility with [AutoHashEquals.jl](https://github.com/andrewcooke/AutoHashEquals.jl)
     # we do not require that the types (specifically, the type arguments) are the same for two
@@ -176,7 +186,6 @@ end
 
 function auto_hash_equals_cached_impl(__source__::LineNumberNode, alt_hash_name, typ::Expr)
     check_valid_alt_hash_name(__source__, alt_hash_name)
-    alt_hash_name === nothing || error("$(__source__.file):$(__source__.line): alternate hash functions not implemented.")
     struct_decl = get_struct_decl(__source__, typ)
     @assert struct_decl.head === :struct
     type_body = struct_decl.args[3].args
@@ -193,7 +202,9 @@ function auto_hash_equals_cached_impl(__source__::LineNumberNode, alt_hash_name,
     push!(type_body, :(_cached_hash::UInt))
 
     # Add the internal constructor
-    compute_hash = foldl((r, a) -> :(hash($a, $r)), member_names; init = :(hash($full_type_name)))
+    base_hash_name = :($Base.hash)
+    defined_hash_name = alt_hash_name === nothing ? base_hash_name : alt_hash_name
+    compute_hash = foldl((r, a) -> :($defined_hash_name($a, $r)), member_names; init = :($defined_hash_name($full_type_name)))
     ctor_body = :(new($(member_names...), $compute_hash))
     if isnothing(where_list)
         push!(type_body, :(function $full_type_name($(member_names...))
@@ -207,13 +218,22 @@ function auto_hash_equals_cached_impl(__source__::LineNumberNode, alt_hash_name,
 
     result = Expr(:block, __source__, esc(:(Base.@__doc__ $typ)), __source__)
 
-    # add functions for hash(x), hash(x, h)
-    push!(result.args, esc(:(function $Base.hash(x::$type_name)
+    # add function for hash(x, h). hash(x)
+    push!(result.args, esc(:(function $defined_hash_name(x::$type_name, h::UInt)
+        $defined_hash_name(x._cached_hash, h)
+        end)))
+    push!(result.args, esc(:(function $defined_hash_name(x::$type_name)
         x._cached_hash
         end)))
-    push!(result.args, esc(:(function $Base.hash(x::$type_name, h::UInt)
-        hash(x._cached_hash, h)
-        end)))
+    if defined_hash_name != base_hash_name
+        # add function for Base.hash(x, h), Base.hash(x)
+        push!(result.args, esc(:(function $base_hash_name(x::$type_name, h::UInt)
+            $defined_hash_name(x, h)
+            end)))
+        push!(result.args, esc(:(function $base_hash_name(x::$type_name)
+            $defined_hash_name(x)
+            end)))
+    end
 
     # add function Base.show
     push!(result.args, esc(:(function $Base._show_default(io::IO, x::$type_name)
