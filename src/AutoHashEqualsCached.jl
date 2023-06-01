@@ -136,19 +136,47 @@ function get_fields(__source__, struct_decl::Expr; prevent_inner_constructors=fa
     return (member_names, member_decls)
 end
 
-"""
-    @auto_hash_equals_cached struct Foo ... end
+function check_valid_alt_hash_name(__source__, alt_hash_name)
+    alt_hash_name === nothing || alt_hash_name isa Symbol || is_expr(alt_hash_name, :.) ||
+        error("$(__source__.file):$(__source__.line): invalid alternate hash function name: $alt_hash_name")
+end
 
-Causes the struct to have an additional hidden field named `_cached_hash` that is computed and stored at the time of construction.
-Produces constructors and specializes the behavior of `Base.show` to maintain the illusion that the field does not exist.
-Two different instantiations of a generic type are considered not equal.
+function auto_hash_equals_impl(__source__::LineNumberNode, alt_hash_name, typ::Expr)
+    check_valid_alt_hash_name(__source__, alt_hash_name)
+    alt_hash_name === nothing || error("$(__source__.file):$(__source__.line): alternate hash functions not implemented.")
+    struct_decl = get_struct_decl(__source__, typ)
+    @assert struct_decl.head === :struct
 
-Also produces specializations of `Base.hash` and `Base.==`:
+    (type_name, _, _) = unpack_type_name(__source__, struct_decl.args[2])
+    @assert type_name isa Symbol
 
-- `Base.==` is implemented as an elementwise test for `isequal`.
-- `Base.hash` just returns the cached hash value.
-"""
-macro auto_hash_equals_cached(typ::Expr)
+    (member_names, _) = get_fields(__source__, struct_decl)
+
+    equalty_impl = foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :true)
+    if struct_decl.args[1]
+        # mutable structs can efficiently be compared by reference
+        equalty_impl = :(a === b || $equalty_impl)
+    end
+
+    result = Expr(:block, __source__, :(Base.@__doc__ $(esc(typ))))
+    push!(result.args, esc(:(function $Base.hash(x::$type_name, h::UInt)
+        $(foldl((r, a) -> :(hash(x.$a, $r)), member_names; init = :(hash($(QuoteNode(type_name)), h))))
+        end)))
+
+    # for compatibility with [AutoHashEquals.jl](https://github.com/andrewcooke/AutoHashEquals.jl)
+    # we do not require that the types (specifically, the type arguments) are the same for two
+    # objects to be considered `==`.
+    push!(result.args, esc(:(function $Base.:(==)(a::$type_name, b::$type_name)
+        $equalty_impl
+        end)))
+
+    # push!(result.args, esc(:()))
+    return result
+end
+
+function auto_hash_equals_cached_impl(__source__::LineNumberNode, alt_hash_name, typ::Expr)
+    check_valid_alt_hash_name(__source__, alt_hash_name)
+    alt_hash_name === nothing || error("$(__source__.file):$(__source__.line): alternate hash functions not implemented.")
     struct_decl = get_struct_decl(__source__, typ)
     @assert struct_decl.head === :struct
     type_body = struct_decl.args[3].args
@@ -165,50 +193,43 @@ macro auto_hash_equals_cached(typ::Expr)
     push!(type_body, :(_cached_hash::UInt))
 
     # Add the internal constructor
+    compute_hash = foldl((r, a) -> :(hash($a, $r)), member_names; init = :(hash($full_type_name)))
+    ctor_body = :(new($(member_names...), $compute_hash))
     if isnothing(where_list)
         push!(type_body, :(function $full_type_name($(member_names...))
-            new($(member_names...), $(foldl((r, a) -> :(hash($a, $r)), member_names; init = :(hash($full_type_name)))))
+            $ctor_body
         end))
     else
         push!(type_body, :(function $full_type_name($(member_names...)) where {$(where_list...)}
-            new($(member_names...), $(foldl((r, a) -> :(hash($a, $r)), member_names; init = :(hash($full_type_name)))))
+            $ctor_body
         end))
     end
 
-    # add functions for hash(x), hash(x, h), and Base._show_default
-    result = quote
-        $__source__
-        Base.@__doc__ $(esc(typ))
-        $(esc(quote
-            function $Base.hash(x::$type_name)
-                x._cached_hash
-            end
-            function $Base.hash(x::$type_name, h::UInt)
-                hash(x._cached_hash, h)
-            end
-        end))
-        function $Base._show_default(io::IO, x::$(esc(:($type_name))))
-            $_show_default_auto_hash_equals_cached(io, x)
-        end
+    result = Expr(:block, __source__, esc(:(Base.@__doc__ $typ)), __source__)
 
-        $(if_has_package("Rematch", Base.UUID("bfecab0d-fd4d-5014-a23f-56c5fae6447a")) do pkg
-            quote
-                # Make Rematch ignore the field that caches the hash code
-                function $pkg.evaluated_fieldcount(::Type{$(esc(:($type_name)))})
-                    $(length(member_names))
-                end
-            end
-        end)
-        $(if_has_package("Rematch2", Base.UUID("351a7294-9038-49b6-b9cf-e076b05af63f")) do pkg
-            quote
-                # Make Rematch2 ignore the field that caches the hash code
-                if :fieldnames in $names($pkg; all=true)
-                    function $pkg.fieldnames(::Type{$(esc(:($type_name)))})
-                        $((member_names...,))
-                    end
-                end
-            end
-        end)
+    # add functions for hash(x), hash(x, h)
+    push!(result.args, esc(:(function $Base.hash(x::$type_name)
+        x._cached_hash
+        end)))
+    push!(result.args, esc(:(function $Base.hash(x::$type_name, h::UInt)
+        hash(x._cached_hash, h)
+        end)))
+
+    # add function Base.show
+    push!(result.args, esc(:(function $Base._show_default(io::IO, x::$type_name)
+        $_show_default_auto_hash_equals_cached(io, x)
+        end)))
+
+    # add functions to interoperate with Rematch and Rematch2
+    if_has_package("Rematch", Base.UUID("bfecab0d-fd4d-5014-a23f-56c5fae6447a")) do pkg
+        push!(result.args, esc(:(function $pkg.evaluated_fieldcount(::Type{$type_name})
+            $(length(member_names))
+            end)))
+    end
+    if_has_package("Rematch2", Base.UUID("351a7294-9038-49b6-b9cf-e076b05af63f")) do pkg
+        push!(result.args, esc(:(function $pkg.fieldnames(::Type{$type_name})
+            $((member_names...,))
+            end)))
     end
 
     equalty_impl = foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :(a._cached_hash == b._cached_hash))
@@ -237,6 +258,25 @@ macro auto_hash_equals_cached(typ::Expr)
 end
 
 """
+    @auto_hash_equals_cached struct Foo ... end
+
+Causes the struct to have an additional hidden field named `_cached_hash` that is computed and stored at the time of construction.
+Produces constructors and specializes the behavior of `Base.show` to maintain the illusion that the field does not exist.
+Two different instantiations of a generic type are considered not equal.
+
+Also produces specializations of `Base.hash` and `Base.==`:
+
+- `Base.==` is implemented as an elementwise test for `isequal`.
+- `Base.hash` just returns the cached hash value.
+"""
+macro auto_hash_equals_cached(typ::Expr)
+    auto_hash_equals_cached_impl(__source__, nothing, typ)
+end
+macro auto_hash_equals_cached(alt_hash_name, typ::Expr)
+    auto_hash_equals_cached_impl(__source__, alt_hash_name, typ)
+end
+
+"""
     @auto_hash_equals struct Foo ... end
 
 Produces specializations of `Base.hash` and `Base.==`:
@@ -249,32 +289,10 @@ The hash code and `==` implementations ignore type parameters, so that `Box{Int}
 This is for compatibility with the package `AutoHashEquals`.
 """
 macro auto_hash_equals(typ::Expr)
-    struct_decl = get_struct_decl(__source__, typ)
-    @assert struct_decl.head === :struct
-
-    (type_name, _, _) = unpack_type_name(__source__, struct_decl.args[2])
-    @assert type_name isa Symbol
-
-    (member_names, _) = get_fields(__source__, struct_decl)
-
-    equalty_impl = foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :true)
-    if struct_decl.args[1]
-        # mutable structs can efficiently be compared by reference
-        equalty_impl = :(a === b || $equalty_impl)
-    end
-
-    # for compatibility with [AutoHashEquals.jl](https://github.com/andrewcooke/AutoHashEquals.jl)
-    # we do not require that the types (specifically, the type arguments) are the same for two
-    # objects to be considered `==`.
-    return esc(quote
-        Base.@__doc__ $typ
-        function $Base.hash(x::$type_name, h::UInt)
-            $(foldl((r, a) -> :(hash(x.$a, $r)), member_names; init = :(hash($(QuoteNode(type_name)), h))))
-        end
-        function $Base.:(==)(a::$type_name, b::$type_name)
-            $equalty_impl
-        end
-    end)
+    auto_hash_equals_impl(__source__, nothing, typ)
+end
+macro auto_hash_equals(alt_hash_name, typ::Expr)
+    auto_hash_equals_impl(__source__, alt_hash_name, typ)
 end
 
 end
