@@ -240,7 +240,8 @@ function auto_hash_equals_cached_impl(__source__::LineNumberNode, alt_hash_name,
         $_show_default_auto_hash_equals_cached(io, x)
         end)))
 
-    # add functions to interoperate with Rematch and Rematch2
+    # Add functions to interoperate with Rematch and Rematch2 if they are loaded
+    # at the time the macro is expanded.
     if_has_package("Rematch", Base.UUID("bfecab0d-fd4d-5014-a23f-56c5fae6447a")) do pkg
         push!(result.args, esc(:(function $pkg.evaluated_fieldcount(::Type{$type_name})
             $(length(member_names))
