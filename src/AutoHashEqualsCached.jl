@@ -151,7 +151,10 @@ function auto_hash_equals_impl(__source__::LineNumberNode, alt_hash_name, typ::E
 
     (member_names, _) = get_fields(__source__, struct_decl)
 
-    equalty_impl = foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :true)
+    equalty_impl = foldl(
+        (r, f) -> :($r && $isequal($getfield(a, $(QuoteNode(f))), $getfield(b, $(QuoteNode(f))))),
+        member_names;
+        init = :true)
     if struct_decl.args[1]
         # mutable structs can efficiently be compared by reference
         equalty_impl = :(a === b || $equalty_impl)
@@ -162,7 +165,10 @@ function auto_hash_equals_impl(__source__::LineNumberNode, alt_hash_name, typ::E
     # add function for hash(x, h)
     base_hash_name = :($Base.hash)
     defined_hash_name = alt_hash_name === nothing ? base_hash_name : alt_hash_name
-    compute_hash = foldl((r, a) -> :($defined_hash_name(x.$a, $r)), member_names; init = :($defined_hash_name($(QuoteNode(type_name)), h)))
+    compute_hash = foldl(
+        (r, a) -> :($defined_hash_name($getfield(x, $(QuoteNode(a))), $r)),
+        member_names;
+        init = :($defined_hash_name($(QuoteNode(type_name)), h)))
     push!(result.args, esc(:(function $defined_hash_name(x::$type_name, h::UInt)
         $compute_hash
         end)))
@@ -204,7 +210,10 @@ function auto_hash_equals_cached_impl(__source__::LineNumberNode, alt_hash_name,
     # Add the internal constructor
     base_hash_name = :($Base.hash)
     defined_hash_name = alt_hash_name === nothing ? base_hash_name : alt_hash_name
-    compute_hash = foldl((r, a) -> :($defined_hash_name($a, $r)), member_names; init = :($defined_hash_name($full_type_name)))
+    compute_hash = foldl(
+        (r, a) -> :($defined_hash_name($a, $r)),
+        member_names;
+        init = :($defined_hash_name($full_type_name)))
     ctor_body = :(new($(member_names...), $compute_hash))
     if isnothing(where_list)
         push!(type_body, :(function $full_type_name($(member_names...))
@@ -253,7 +262,10 @@ function auto_hash_equals_cached_impl(__source__::LineNumberNode, alt_hash_name,
             end)))
     end
 
-    equalty_impl = foldl((r, f) -> :($r && isequal(a.$f, b.$f)), member_names; init = :(a._cached_hash == b._cached_hash))
+    equalty_impl = foldl(
+        (r, f) -> :($r && $isequal($getfield(a, $(QuoteNode(f))), $getfield(b, $(QuoteNode(f))))),
+        member_names;
+        init = :(a._cached_hash == b._cached_hash))
 
     if isnothing(where_list)
         # add == for non-generic types
@@ -281,8 +293,9 @@ end
 """
     @auto_hash_equals_cached struct Foo ... end
 
-Causes the struct to have an additional hidden field named `_cached_hash` that is computed and stored at the time of construction.
-Produces constructors and specializes the behavior of `Base.show` to maintain the illusion that the field does not exist.
+Causes the struct to have an additional hidden field named `_cached_hash` that is
+computed and stored at the time of construction.  Produces constructors and specializes
+the behavior of `Base.show` to maintain the illusion that the field does not exist.
 Two different instantiations of a generic type are considered not equal.
 
 Also produces specializations of `Base.hash` and `Base.==`:
@@ -305,9 +318,9 @@ Produces specializations of `Base.hash` and `Base.==`:
 - `Base.==` is implemented as an elementwise test for `isequal`.
 - `Base.hash` combines the elementwise hash code of the fields with the hash code of the type's simple name.
 
-The hash code and `==` implementations ignore type parameters, so that `Box{Int}(1)` will be considered
-`equals` to `Box{Any}(1)`.
-This is for compatibility with the package `AutoHashEquals`.
+The hash code and `==` implementations ignore type parameters, so that `Box{Int}(1)`
+will be considered `isequal` to `Box{Any}(1)`.  This is for compatibility with the
+package `AutoHashEquals.jl`.
 """
 macro auto_hash_equals(typ::Expr)
     auto_hash_equals_impl(__source__, nothing, typ)
