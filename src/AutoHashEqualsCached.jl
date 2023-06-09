@@ -2,13 +2,24 @@
 
 module AutoHashEqualsCached
 
+using Pkg
+
 export @auto_hash_equals_cached, @auto_hash_equals
 
-function if_has_package(action::Function, name::String, uuid::Base.UUID)
+pkgversion(m::Module) = VersionNumber(Pkg.TOML.parsefile(joinpath(dirname(string(first(methods(m.eval)).file)), "..", "Project.toml"))["version"])
+
+function if_has_package(
+    action::Function,
+    name::String,
+    uuid::Base.UUID,
+    version::VersionNumber
+)
     pkgid = Base.PkgId(uuid, name)
     if Base.root_module_exists(pkgid)
         pkg = Base.root_module(pkgid)
-        action(pkg)
+        if pkgversion(pkg) >= version
+            return action(pkg)
+        end
     end
 end
 
@@ -251,15 +262,17 @@ function auto_hash_equals_cached_impl(__source__::LineNumberNode, alt_hash_name,
 
     # Add functions to interoperate with Rematch and Rematch2 if they are loaded
     # at the time the macro is expanded.
-    if_has_package("Rematch", Base.UUID("bfecab0d-fd4d-5014-a23f-56c5fae6447a")) do pkg
+    if_has_package("Rematch", Base.UUID("bfecab0d-fd4d-5014-a23f-56c5fae6447a"), v"0.3.3") do pkg
         push!(result.args, esc(:(function $pkg.evaluated_fieldcount(::Type{$type_name})
             $(length(member_names))
             end)))
     end
-    if_has_package("Rematch2", Base.UUID("351a7294-9038-49b6-b9cf-e076b05af63f")) do pkg
-        push!(result.args, esc(:(function $pkg.fieldnames(::Type{$type_name})
-            $((member_names...,))
-            end)))
+    if_has_package("Rematch2", Base.UUID("351a7294-9038-49b6-b9cf-e076b05af63f"), v"0.2.6") do pkg
+        if :fieldnames in names(pkg; all=true)
+            push!(result.args, esc(:(function $pkg.fieldnames(::Type{$type_name})
+                $((member_names...,))
+                end)))
+        end
     end
 
     equalty_impl = foldl(
