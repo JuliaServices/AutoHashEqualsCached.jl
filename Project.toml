@@ -9,6 +9,7 @@ Rematch2 = "351a7294-9038-49b6-b9cf-e076b05af63f"
 
 [compat]
 julia = "1.6"
+Rematch = "0.3"
 
 [extras]
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
