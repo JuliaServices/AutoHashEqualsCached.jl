@@ -4,7 +4,7 @@ module AutoHashEqualsCached
 
 using Pkg
 
-export @auto_hash_equals_cached, @auto_hash_equals
+export @auto_hash_equals_cached, @auto_hash_equals, @auto_hash_equals_const
 
 pkgversion(m::Module) = VersionNumber(Pkg.TOML.parsefile(joinpath(dirname(string(first(methods(m.eval)).file)), "..", "Project.toml"))["version"])
 
@@ -129,6 +129,8 @@ function get_fields(__source__, struct_decl::Expr; prevent_inner_constructors=fa
             # we don't want to permit that if it would interfere with us producing them.
             prevent_inner_constructors &&
                 error("$(__source__.file):$(__source__.line): macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
+        else
+            error("$(__source__.file):$(__source__.line): Unexpected field declaration: $decl")
         end
     end
     function add_fields(__source__, b::Expr)
@@ -201,14 +203,93 @@ function auto_hash_equals_impl(__source__::LineNumberNode, alt_hash_name, typ::E
     return result
 end
 
-function auto_hash_equals_cached_impl(__source__::LineNumberNode, alt_hash_name, typ::Expr)
+#
+# Modify the struct declaration to make it mutable, making the individual fields
+# const in the process.  If the struct is already mutable, merely warn about
+# any fields that are not declared const, since we will be cacheing a precomputed
+# hash value.
+#
+function make_mutable(
+    __source__::LineNumberNode,
+    __module__::Module,
+    struct_decl::Expr)
+
+    # If the struct is already mutable, then we only need to warn on any fields that are
+    # not declared const.
+    warn_rather_than_force = struct_decl.args[1] # the mutable flag
+    struct_decl.args[1] = true
+
+    function ensure_const(decl)
+        if VERSION < v"1.8"
+            # Before Julia 1.8, we can't use `const` on a field declaration
+            return decl
+        elseif warn_rather_than_force
+            println("producing warning for $decl")
+            @warn("$(__source__.file):$(__source__.line): Field declaration `$decl` should be declared const, so that the cached hash value will not be invalidated by any mutations.")
+            return decl
+        else
+            return Expr(:const, decl)
+        end
+    end
+    add_const_if_needed(decl::LineNumberNode) = decl
+    function add_const_if_needed(decl::Symbol)
+        return ensure_const(decl)
+    end
+    function handle_decls end
+    function add_const_if_needed(decl::Expr)
+        if decl.head === :(::) && decl.args[1] isa Symbol
+            decl = ensure_const(decl)
+        elseif decl.head === :macrocall
+            decl = add_const_if_needed(macroexpand(__module__, decl))
+        elseif decl.head === :block
+            handle_decls(decl.args)
+        elseif decl.head === :const
+            # already const
+        elseif decl.head === :function || decl.head === :(=) && (decl.args[1] isa Expr && decl.args[1].head in (:call, :where))
+            # ignore inner ctor
+        else
+            error("$(__source__.file):$(__source__.line): Unexpected field declaration: $decl")
+        end
+        return decl
+    end
+    function handle_decls(decls::Vector{Any})
+        for i in 1:length(decls)
+            decl = decls[i]
+            if decl isa LineNumberNode
+                __source__ = decl
+            else
+                decls[i] = add_const_if_needed(decl)
+            end
+        end
+    end
+
+    @assert struct_decl.args[3].head === :block
+    handle_decls(struct_decl.args[3].args)
+    nothing # we modified the struct decl in place
+end
+
+function auto_hash_equals_cached_impl(
+    __source__::LineNumberNode,
+    __module__::Module,
+    alt_hash_name,
+    typ::Expr,
+    should_make_mutable::Bool=false
+)
     check_valid_alt_hash_name(__source__, alt_hash_name)
     struct_decl = get_struct_decl(__source__, typ)
     @assert struct_decl.head === :struct
     type_body = struct_decl.args[3].args
+    was_mutable = struct_decl.args[1]
 
-    !struct_decl.args[1] ||
+    if !should_make_mutable && was_mutable
+        println("was mutable: $was_mutable")
+        dump(struct_decl)
         error("$(__source__.file):$(__source__.line): macro @auto_hash_equals_cached should only be applied to a non-mutable struct.")
+    end
+
+    if should_make_mutable
+        make_mutable(__source__, __module__, struct_decl)
+    end
 
     (type_name, full_type_name, where_list) = unpack_type_name(__source__, struct_decl.args[2])
     @assert type_name isa Symbol
@@ -280,6 +361,11 @@ function auto_hash_equals_cached_impl(__source__::LineNumberNode, alt_hash_name,
         member_names;
         init = :(a._cached_hash == b._cached_hash))
 
+    # if the type is now mutable, we have an equality shortcut of compating references.
+    if should_make_mutable
+        equalty_impl = :(a === b || $equalty_impl)
+    end
+
     if isnothing(where_list)
         # add == for non-generic types
         push!(result.args, esc(quote
@@ -317,10 +403,35 @@ Also produces specializations of `Base.hash` and `Base.==`:
 - `Base.hash` just returns the cached hash value.
 """
 macro auto_hash_equals_cached(typ::Expr)
-    auto_hash_equals_cached_impl(__source__, nothing, typ)
+    auto_hash_equals_cached_impl(__source__, __module__, nothing, typ)
 end
 macro auto_hash_equals_cached(alt_hash_name, typ::Expr)
-    auto_hash_equals_cached_impl(__source__, alt_hash_name, typ)
+    auto_hash_equals_cached_impl(__source__, __module__, alt_hash_name, typ)
+end
+
+"""
+    @auto_hash_equals_const struct Foo ... end
+
+Causes the struct to have an additional hidden field named `_cached_hash` that is
+computed and stored at the time of construction.  Produces constructors and specializes
+the behavior of `Base.show` to maintain the illusion that the field does not exist.
+Two different instantiations of a generic type are considered not equal.  This version
+makes the type itself mutable, but makes every field `const`, so that the overall effect
+is that the struct remains immutable.  However, the struct will be heap-allocated.  Using
+this macro rather than @auto_hash_equals_cached can be useful when the use of the type
+incurs a high cost for copying or boxing, or when comparing equality can benefit from
+a reference equality shortcut.
+
+Also produces specializations of `Base.hash` and `Base.==`:
+
+- `Base.==` is implemented as an elementwise test for `isequal`.
+- `Base.hash` just returns the cached hash value.
+"""
+macro auto_hash_equals_const(typ::Expr)
+    auto_hash_equals_cached_impl(__source__, __module__,  nothing, typ, true)
+end
+macro auto_hash_equals_const(alt_hash_name, typ::Expr)
+    auto_hash_equals_cached_impl(__source__, __module__, alt_hash_name, typ, true)
 end
 
 """

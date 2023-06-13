@@ -2,7 +2,7 @@
 
 module runtests
 
-using AutoHashEqualsCached: @auto_hash_equals, @auto_hash_equals_cached
+using AutoHashEqualsCached
 using Markdown: plain
 using Serialization
 using Test
@@ -20,6 +20,15 @@ macro noop(x)
     esc(quote
        Base.@__doc__$(x)
     end)
+end
+
+# add a const to a field declaration if supported.
+macro _const(x)
+    if VERSION >= v"1.8"
+        esc(Expr(:const, x))
+    else
+        esc(x)
+    end
 end
 
 # some custom hash function
@@ -468,7 +477,40 @@ myhash(o) = myhash(o, UInt(0x0))
             q, r = rand(RandomDevice(), UInt, 2)
             @test myhash(S470(q)) == hash(S470(q))
             @test myhash(S470(q), r) == hash(S470(q), r)
-            r !== 0 && @test myhash(S275(q), r) != hash(S275(q))
+            r !== 0 && @test myhash(S470(q), r) != hash(S470(q))
+        end
+    end
+
+    @testset "tests for @auto_hash_equals_const" begin
+        @testset "case 1: type immutable" begin
+            @auto_hash_equals_const struct S477
+                x::UInt
+                @_const y::UInt
+                z
+                @_const w
+            end
+            x, y, z, w, h = rand(RandomDevice(), UInt, 5)
+            @test S477(x, y, z, w) == S477(x, y, z, w)
+            @test S477(x, y, z, w) !== S477(x, y, z, w) # reference unequal
+            h !== 0 && @test hash(S477(x, y, z, w), h) != hash(S477(x, y, z, w))
+            if VERSION >= v"1.8"
+                @test Base.isconst(S477, :x)
+                @test Base.isconst(S477, :y)
+                @test Base.isconst(S477, :z)
+                @test Base.isconst(S477, :w)
+            end
+        end
+        @testset "case 2a: type was already mutable" begin
+            if VERSION >= v"1.8"
+                let line = (@__LINE__) + 4, file = @__FILE__
+                    @test_warn(
+                        "$file:$line: Field declaration `x::UInt` should be declared const, so that the cached hash value will not be invalidated by any mutations.",
+                        @eval @auto_hash_equals_const mutable struct S530
+                            x::UInt
+                        end
+                        )
+                end
+            end
         end
     end
 
