@@ -21,14 +21,16 @@ function if_has_package(
             return action(pkg)
         end
     end
+
+    return nothing
 end
 
 # `_show_default_auto_hash_equals_cached` is just like `Base._show_default(io, x)`,
 # except it ignores fields named `_cached_hash`.  This function is called in the
 # implementation of `T._show_default` for each type `T` annotated with
 # `@auto_hash_equals_cached`.  This is ultimately used in the implementation of
-# `Base.show`.  This specialization ensures that showing circular data structures does not
-# result in infinite recursion.
+# `Base.show`.  This specialization ensures that showing a circular data structure
+# does not result in infinite recursion.
 function _show_default_auto_hash_equals_cached(io::IO, @nospecialize(x))
     t = typeof(x)
     show(io, Base.inferencebarrier(t)::DataType)
@@ -53,7 +55,9 @@ function _show_default_auto_hash_equals_cached(io::IO, @nospecialize(x))
     print(io,')')
 end
 
-# Find the first struct declaration buried in the Expr.
+# Find the first struct declaration buried in the Expr.  Sometimes the struct decl is
+# wrapped in a macrocall, or a block, or a macrocall inside a block, etc.  Such a block
+# might have been the result of applying a macro.
 get_struct_decl(__source__, typ) = nothing
 function get_struct_decl(__source__, typ::Expr)
     if typ.head === :struct
@@ -391,66 +395,110 @@ end
 
 """
     @auto_hash_equals_cached struct Foo ... end
+    @auto_hash_equals_cached alt_hash_name struct Foo x; y; end
+    @auto_hash_equals_cached (:x, :y) struct Foo x; y; z; end
+    @auto_hash_equals_cached alt_hash_name (:x, :y) struct Foo x; y; z; end
 
-Causes the struct to have an additional hidden field named `_cached_hash` that is
-computed and stored at the time of construction.  Produces constructors and specializes
+Produces specializations of the hash function and equality operator for the
+struct.  The computed hash code is cached in a field named `_cached_hash`.
+Produces constructors and specializes
 the behavior of `Base.show` to maintain the illusion that the field does not exist.
-Two different instantiations of a generic type are considered not equal.
 
-Also produces specializations of `Base.hash` and `Base.==`:
+If the struct declaration includes the keyword `mutable` in source, a error is
+produced if any of the (named) fields do not have the `const` modifier.
 
-- `Base.==` is implemented as an elementwise test for `isequal`.
+If an *alt_hash_name* is provided, it names a hash function that should be specialized
+and used instead of `Base.hash` on the fields to compute the hash value.
+If a tuple of symbols is provided, it names the fields that should be used to compute
+the hash and equality,
+
+Whether or not an *alt_hash_name* is provided, also produces specializations
+of `Base.hash` and `Base.==`:
+
+- `Base.==` is implemented as an elementwise test for `isequal`. Two different
+  instantiations (that is, with different type arguments) of a generic type
+  are considered not equal.
 - `Base.hash` just returns the cached hash value.
 """
-macro auto_hash_equals_cached(typ::Expr)
-    auto_hash_equals_cached_impl(__source__, __module__, nothing, typ)
-end
-macro auto_hash_equals_cached(alt_hash_name, typ::Expr)
-    auto_hash_equals_cached_impl(__source__, __module__, alt_hash_name, typ)
+macro auto_hash_equals_cached(args...)
+    auto_hash_equals_cached_impl(__source__, __module__, false, args...)
 end
 
 """
     @auto_hash_equals_const struct Foo ... end
+    @auto_hash_equals_const alt_hash_name struct Foo x; y; end
+    @auto_hash_equals_const (:x, :y) struct Foo x; y; z; end
+    @auto_hash_equals_const alt_hash_name (:x, :y) struct Foo x; y; z; end
 
-Causes the struct to have an additional hidden field named `_cached_hash` that is
-computed and stored at the time of construction.  Produces constructors and specializes
+Produces specializations of the hash function and equality operator for the
+struct.  The computed hash code is cached in a field named `_cached_hash`.
+Produces constructors and specializes
 the behavior of `Base.show` to maintain the illusion that the field does not exist.
-Two different instantiations of a generic type are considered not equal.  This version
+Causes the struct type to be mutable, but makes the fields `const`.
+Produces constructors and specializes
+the behavior of `Base.show` to maintain the illusion that the field does not exist.
+
+This version
 makes the type itself mutable, but makes every field `const`, so that the overall effect
 is that the struct remains immutable.  However, the struct will be heap-allocated.  Using
 this macro rather than @auto_hash_equals_cached can be useful when the use of the type
 incurs a high cost for copying or boxing, or when comparing equality can benefit from
 a reference equality shortcut.
 
-Also produces specializations of `Base.hash` and `Base.==`:
+If the struct declaration includes the keyword `mutable` in source, then rather than
+adding `const` to every field, a warning is produced if any of the (named) fields do
+not have the `const` modifier.
 
-- `Base.==` is implemented as an elementwise test for `isequal`.
+If an *alt_hash_name* is provided, it names a hash function that should be specialized
+and used instead of `Base.hash` on the fields to compute the hash value.
+If a tuple of symbols is provided, it names the fields that should be used to compute
+the hash and equality,
+
+Whether or not an *alt_hash_name* is provided, also produces specializations
+of `Base.hash` and `Base.==`:
+
+- `Base.==` is implemented as an elementwise test for `isequal`. Two different
+  instantiations (that is, with different type arguments) of a generic type
+  are considered not equal.
 - `Base.hash` just returns the cached hash value.
 """
-macro auto_hash_equals_const(typ::Expr)
-    auto_hash_equals_cached_impl(__source__, __module__,  nothing, typ, true)
-end
-macro auto_hash_equals_const(alt_hash_name, typ::Expr)
-    auto_hash_equals_cached_impl(__source__, __module__, alt_hash_name, typ, true)
+macro auto_hash_equals_const(args...)
+    auto_hash_equals_cached_impl(__source__, __module__, true, args...)
 end
 
 """
     @auto_hash_equals struct Foo ... end
+    @auto_hash_equals alt_hash_name struct Foo x; y; end
+    @auto_hash_equals (:x, :y) struct Foo x; y; z; end
+    @auto_hash_equals alt_hash_name (:x, :y) struct Foo x; y; z; end
 
-Produces specializations of `Base.hash` and `Base.==`:
-
-- `Base.==` is implemented as an elementwise test for `isequal`.
-- `Base.hash` combines the elementwise hash code of the fields with the hash code of the type's simple name.
-
+Produces specializations of the hash function and equality operator for the
+struct.
 The hash code and `==` implementations ignore type parameters, so that `Box{Int}(1)`
 will be considered `isequal` to `Box{Any}(1)`.  This is for compatibility with the
 package `AutoHashEquals.jl`.
+
+If an *alt_hash_name* is provided, it names a hash function that should be specialized
+and used instead of `Base.hash` on the fields to compute the hash value.
+If a tuple of symbols is provided, it names the fields that should be used to compute
+the hash and equality,
+
+If the struct declaration includes the keyword `mutable` in source, a warning is
+produced if any of the (named) fields do not have the `const` modifier.
+
+Whether or not an *alt_hash_name* is provided, also produces specializations
+of `Base.hash` and `Base.==`:
+
+- `Base.==` is implemented as an elementwise test for `isequal`. Two different
+  instantiations (that is, with different type arguments) of a generic type
+  are considered equal if the elements are equal.
+
+- `Base.hash` is a hash of the (named) fields of the struct, computed using the
+  `hash` function on each field.  The hash of the (simple) type name is also included
+  in the hash value.
 """
-macro auto_hash_equals(typ::Expr)
-    auto_hash_equals_impl(__source__, nothing, typ)
-end
-macro auto_hash_equals(alt_hash_name, typ::Expr)
-    auto_hash_equals_impl(__source__, alt_hash_name, typ)
+macro auto_hash_equals(args...)
+    auto_hash_equals_impl(__source__, args...)
 end
 
 end
