@@ -6,7 +6,8 @@ using AutoHashEqualsCached: @auto_hash_equals, @auto_hash_equals_cached
 using Markdown: plain
 using Serialization
 using Test
-using Rematch: @match, MatchFailure
+using Rematch: Rematch, @match, MatchFailure
+using Random
 
 function serialize_and_deserialize(x)
     buf = IOBuffer()
@@ -20,6 +21,14 @@ macro noop(x)
        Base.@__doc__$(x)
     end)
 end
+
+# some custom hash function
+function myhash end
+myhash(o::T, h::UInt) where {T} = error("myhash not implemented for $T")
+myhash(o::UInt, h::UInt) = xor(o, h)
+myhash(o::Symbol, h::UInt) = Base.hash(o, h)
+myhash(o::Type, h::UInt) = myhash(o.name.name, h)
+myhash(o) = myhash(o, UInt(0x0))
 
 @testset "AutoHashEqualsCached.jl" begin
 
@@ -194,8 +203,8 @@ end
 
         # @test_throws requires a type before v1.8.
         internal_constructor_error =
-            if VERSION >= v"1.8"
-                ErrorException("macro @auto_hash_equals_cached should not be used on a struct that declares an inner constructor")
+            if VERSION >= v"1.7"
+                ErrorException
             else
                 LoadError
             end
@@ -226,31 +235,35 @@ end
             end
         end
 
-        @testset "test simple Rematch usage" begin
-            struct R157; x; y; end
-            @test (@match R157(z,2) = R157(1,2)) == R157(1,2) && z == 1
-            @test_throws MatchFailure @match R157(x, 3) = R157(1,2)
-            @test (@match R157(1,2) begin
-                R157(x=x1,y=y1) => (x1,y1)
-            end) == (1,2)
-        end
+        @testset "test interoperation with Rematch" begin
 
-        @testset "make sure Rematch works for types with cached hash code" begin
-            @auto_hash_equals_cached struct R158; x; y::Int; end
-            @test (@match R158(x,2) = R158(1,2)) == R158(1,2) && x == 1
-            @test_throws MatchFailure @match R158(x, 3) = R158(1,2)
-            @test (@match R158(1,2) begin
-                R158(x=x1,y=y1) => (x1,y1)
-            end) == (1,2)
-        end
+            @testset "test simple Rematch usage" begin
+                struct R157; x; y; end
+                @test (Rematch.@match R157(z,2) = R157(1,2)) == R157(1,2) && z == 1
+                @test_throws Rematch.MatchFailure Rematch.@match R157(x, 3) = R157(1,2)
+                @test (Rematch.@match R157(1,2) begin
+                    R157(x=x1,y=y1) => (x1,y1)
+                end) == (1,2)
+            end
 
-        @testset "make sure Rematch works for generic types with cached hash code" begin
-            @auto_hash_equals_cached struct R159{T}; x; y::T; end
-            @test (@match R159(x,2) = R159(1,2)) == R159(1,2) && x == 1
-            @test_throws MatchFailure @match R159(x, 3) = R159(1,2)
-            @test (@match R159(1,2) begin
-                R159(x=x1,y=y1) => (x1,y1)
-            end) == (1,2)
+            @testset "make sure Rematch works for types with cached hash code" begin
+                @auto_hash_equals_cached struct R158; x; y::Int; end
+                @test (Rematch.@match R158(x,2) = R158(1,2)) == R158(1,2) && x == 1
+                @test_throws Rematch.MatchFailure Rematch.@match R158(x, 3) = R158(1,2)
+                @test (Rematch.@match R158(1,2) begin
+                    R158(x=x1,y=y1) => (x1,y1)
+                end) == (1,2)
+            end
+
+            @testset "make sure Rematch works for generic types with cached hash code" begin
+                @auto_hash_equals_cached struct R159{T}; x; y::T; end
+                @test (Rematch.@match R159(x,2) = R159(1,2)) == R159(1,2) && x == 1
+                @test_throws Rematch.MatchFailure Rematch.@match R159(x, 3) = R159(1,2)
+                @test (Rematch.@match R159(1,2) begin
+                    R159(x=x1,y=y1) => (x1,y1)
+                end) == (1,2)
+            end
+
         end
 
         @testset "give an error if the struct contains internal constructors 4" begin
@@ -273,6 +286,16 @@ end
             end
             @test S269{Int}(2.0).x === 2
             @test S269(2.0).x === 2.0
+        end
+
+        @testset "check that we can define custom hash function" begin
+            @auto_hash_equals_cached runtests.myhash struct S275
+                x::UInt
+            end
+            q, r = rand(RandomDevice(), UInt, 2)
+            @test myhash(S275(q)) == hash(S275(q))
+            @test myhash(S275(q), r) == hash(S275(q), r)
+            r !== 0 && @test myhash(S275(q), r) != hash(S275(q))
         end
     end
 
@@ -438,6 +461,15 @@ end
             end
         end
 
+        @testset "check that we can define custom hash function" begin
+            @auto_hash_equals runtests.myhash struct S470
+                x::UInt
+            end
+            q, r = rand(RandomDevice(), UInt, 2)
+            @test myhash(S470(q)) == hash(S470(q))
+            @test myhash(S470(q), r) == hash(S470(q), r)
+            r !== 0 && @test myhash(S275(q), r) != hash(S275(q))
+        end
     end
 
 end
