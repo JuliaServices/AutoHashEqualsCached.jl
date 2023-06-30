@@ -2,7 +2,7 @@
 
 julia_version = "1.8.2"
 manifest_format = "2.0"
-project_hash = "3e6bd3febd988a635f4c35d0deaa056955f2206a"
+project_hash = "94bd4f5c5c9e9005d7ae3024d2912a5d45be7576"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -102,11 +102,11 @@ uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [[deps.Rematch2]]
 deps = ["MacroTools", "OrderedCollections"]
-git-tree-sha1 = "559b870a1f3c7f3b6caf6a9daa1bb773d6d391b2"
-repo-rev = "fieldnames"
-repo-url = "https://github.com/gafter/Rematch2.jl"
+git-tree-sha1 = "4d932fd08d3e8057ad1fdd6b8dfaa06ec8f1fabd"
+repo-rev = "v0.4.0"
+repo-url = "https://github.com/JuliaServices/Rematch2.jl"
 uuid = "351a7294-9038-49b6-b9cf-e076b05af63f"
-version = "0.2.6"
+version = "0.4.0"
 
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"

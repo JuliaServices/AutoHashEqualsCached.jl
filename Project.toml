@@ -1,7 +1,7 @@
 name = "AutoHashEqualsCached"
 uuid = "887ad303-ad3a-4bc5-965e-507c643d6945"
 authors = ["Neal Gafter <neal@gafter.com> and contributors"]
-version = "0.2.1"
+version = "0.2.2"
 
 [deps]
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
