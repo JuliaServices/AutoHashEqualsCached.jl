@@ -6,7 +6,7 @@ using AutoHashEqualsCached: @auto_hash_equals, @auto_hash_equals_cached
 using Markdown: plain
 using Serialization
 using Test
-using Rematch: Rematch, @match, MatchFailure
+using Match: Match, @match, MatchFailure
 using Random
 
 function serialize_and_deserialize(x)
@@ -233,37 +233,6 @@ myhash(o) = myhash(o, UInt(0x0))
                     end
                 end
             end
-        end
-
-        @testset "test interoperation with Rematch" begin
-
-            @testset "test simple Rematch usage" begin
-                struct R157; x; y; end
-                @test (Rematch.@match R157(z,2) = R157(1,2)) == R157(1,2) && z == 1
-                @test_throws Rematch.MatchFailure Rematch.@match R157(x, 3) = R157(1,2)
-                @test (Rematch.@match R157(1,2) begin
-                    R157(x=x1,y=y1) => (x1,y1)
-                end) == (1,2)
-            end
-
-            @testset "make sure Rematch works for types with cached hash code" begin
-                @auto_hash_equals_cached struct R158; x; y::Int; end
-                @test (Rematch.@match R158(x,2) = R158(1,2)) == R158(1,2) && x == 1
-                @test_throws Rematch.MatchFailure Rematch.@match R158(x, 3) = R158(1,2)
-                @test (Rematch.@match R158(1,2) begin
-                    R158(x=x1,y=y1) => (x1,y1)
-                end) == (1,2)
-            end
-
-            @testset "make sure Rematch works for generic types with cached hash code" begin
-                @auto_hash_equals_cached struct R159{T}; x; y::T; end
-                @test (Rematch.@match R159(x,2) = R159(1,2)) == R159(1,2) && x == 1
-                @test_throws Rematch.MatchFailure Rematch.@match R159(x, 3) = R159(1,2)
-                @test (Rematch.@match R159(1,2) begin
-                    R159(x=x1,y=y1) => (x1,y1)
-                end) == (1,2)
-            end
-
         end
 
         @testset "give an error if the struct contains internal constructors 4" begin
