@@ -1,20 +1,10 @@
 name = "AutoHashEqualsCached"
 uuid = "887ad303-ad3a-4bc5-965e-507c643d6945"
 authors = ["Neal Gafter <neal@gafter.com> and contributors"]
-version = "0.3.0"
+version = "1.0.0"
 
 [deps]
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
-Match = "7eb4fadd-790c-5f42-8a69-bfa0b872bfbf"
 
 [compat]
-Match = "2"
 julia = "1.6"
-
-[extras]
-Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
-Match = "7eb4fadd-790c-5f42-8a69-bfa0b872bfbf"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-
-[targets]
-test = ["Test"]

@@ -4,10 +4,10 @@ module runtests
 
 using AutoHashEqualsCached: @auto_hash_equals, @auto_hash_equals_cached
 using Markdown: plain
-using Serialization
-using Test
 using Match: Match, @match, MatchFailure
 using Random
+using Serialization
+using Test
 
 function serialize_and_deserialize(x)
     buf = IOBuffer()
@@ -29,6 +29,22 @@ myhash(o::UInt, h::UInt) = xor(o, h)
 myhash(o::Symbol, h::UInt) = Base.hash(o, h)
 myhash(o::Type, h::UInt) = myhash(o.name.name, h)
 myhash(o) = myhash(o, UInt(0x0))
+
+# Some types for testing interoperation with `Match.jl`
+struct R157; x; y; end
+@auto_hash_equals_cached struct R158; x; y::Int; end
+@auto_hash_equals_cached struct R159{T}; x; y::T; end
+
+@auto_hash_equals fields=(a, b) struct R477
+    a
+    b
+    ignore_me
+end
+@auto_hash_equals cache=true fields=(a, b) struct R478
+    a
+    b
+    ignore_me
+end
 
 @testset "AutoHashEqualsCached.jl" begin
 
@@ -235,6 +251,34 @@ myhash(o) = myhash(o, UInt(0x0))
             end
         end
 
+        @testset "test interoperation with Match" begin
+
+            @testset "test simple Match usage" begin
+                @test (Match.@match R157(z,2) = R157(1,2)) == R157(1,2) && z == 1
+                @test_throws Match.MatchFailure Match.@match R157(x, 3) = R157(1,2)
+                @test (Match.@match R157(1,2) begin
+                    R157(x=x1,y=y1) => (x1,y1)
+                end) == (1,2)
+            end
+
+            @testset "make sure Match works for types with cached hash code" begin
+                @test (Match.@match R158(x,2) = R158(1,2)) == R158(1,2) && x == 1
+                @test_throws Match.MatchFailure Match.@match R158(x, 3) = R158(1,2)
+                @test (Match.@match R158(1,2) begin
+                    R158(x=x1,y=y1) => (x1,y1)
+                end) == (1,2)
+            end
+
+            @testset "make sure Match works for generic types with cached hash code" begin
+                @test (Match.@match R159(x,2) = R159(1,2)) == R159(1,2) && x == 1
+                @test_throws Match.MatchFailure Match.@match R159(x, 3) = R159(1,2)
+                @test (Match.@match R159(1,2) begin
+                    R159(x=x1,y=y1) => (x1,y1)
+                end) == (1,2)
+            end
+
+        end
+
         @testset "give an error if the struct contains internal constructors 4" begin
             @test_throws internal_constructor_error begin
                 @macroexpand @auto_hash_equals_cached struct T156
@@ -431,7 +475,7 @@ myhash(o) = myhash(o, UInt(0x0))
         end
 
         @testset "check that we can define custom hash function" begin
-            @auto_hash_equals runtests.myhash struct S470
+            @auto_hash_equals hashfn=runtests.myhash struct S470
                 x::UInt
             end
             q, r = rand(RandomDevice(), UInt, 2)
@@ -439,8 +483,46 @@ myhash(o) = myhash(o, UInt(0x0))
             @test myhash(S470(q), r) == hash(S470(q), r)
             r !== 0 && @test myhash(S275(q), r) != hash(S275(q))
         end
-    end
 
+        @testset "fields are obeyed for the hash function and for pattern-matching 1" begin
+            a = R477(1, 2, 3)
+            b = R477(1, 2, 4)
+            c = R477(1, 3, 3)
+            d = R477(2, 2, 3)
+            @test a == b
+            @test a != c
+            @test a != d
+            @test c != d
+            @test hash(a) == hash(b)
+            @test hash(a) != hash(c)
+            @test hash(a) != hash(d)
+            @test hash(c) != hash(d)
+            @test @match a begin
+                R477(1, 2) => true
+                _ => false
+            end
+        end
+
+        @testset "fields are obeyed for the hash function and for pattern-matching 2" begin
+            a = R478(1, 2, 3)
+            b = R478(1, 2, 4)
+            c = R478(1, 3, 3)
+            d = R478(2, 2, 3)
+            @test a == b
+            @test a != c
+            @test a != d
+            @test c != d
+            @test hash(a) == hash(b)
+            @test hash(a) != hash(c)
+            @test hash(a) != hash(d)
+            @test hash(c) != hash(d)
+            @test @match a begin
+                R478(1, 2) => true
+                _ => false
+            end
+        end
+
+    end
 end
 
 end # module
