@@ -222,6 +222,13 @@ function auto_hash_equals_impl(__source__, struct_decl, fields, cache::Bool, has
     (member_names, member_decls) = get_fields(__source__, struct_decl; prevent_inner_constructors=cache)
     if isnothing(fields)
         fields = (member_names...,)
+    else
+        for f in fields
+            f isa Symbol ||
+                error("$(__source__.file):$(__source__.line): invalid field name: `$f`")
+            f in member_names ||
+                error("$(__source__.file):$(__source__.line): field `$f` not found in struct `$type_name`")
+        end
     end
 
     base_hash_name = :($Base.hash)

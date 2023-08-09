@@ -522,6 +522,13 @@ end
             end
         end
 
+        @testset "you may not name nonexistent fields" begin
+            @test_throws Exception @eval @auto_hash_equals fields=(x, z) struct S477
+                x
+                y
+            end
+        end
+
     end
 end
 
