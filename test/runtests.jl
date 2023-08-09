@@ -578,6 +578,16 @@ end
                 y
             end
         end
+
+        @testset "You may name a single field" begin
+            @auto_hash_equals fields=(x) struct S479
+                x
+                y
+            end
+            @test S479(1, 2) == S479(1, 3)
+            @test hash(S479(1, 2)) == hash(S479(1, 3))
+        end
+
     end
 end
 
