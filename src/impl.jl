@@ -60,11 +60,7 @@ function _show_default_auto_hash_equals_cached(io::IO, @nospecialize(x))
             elseif i > 1
                 print(io, ", ")
             end
-            if !isdefined(x, f)
-                print(io, Base.undef_ref_str)
-            else
-                show(recur_io, getfield(x, i))
-            end
+            isdefined(x, f) ? show(recur_io, getfield(x, i)) : print(io, Base.undef_ref_str)
         end
     end
     print(io,')')
@@ -133,7 +129,7 @@ function get_fields(__source__, struct_decl::Expr; prevent_inner_constructors=fa
     end
     function add_field(__source__, b::Expr)
         if b.head === :block
-            add_fields(field)
+            add_fields(__source__, b)
         elseif b.head === :const
             add_field(__source__, b.args[1])
         elseif b.head === :(::) && b.args[1] isa Symbol

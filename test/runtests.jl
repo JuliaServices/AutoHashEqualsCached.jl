@@ -74,6 +74,42 @@ end
             @test plain(@doc T30) == "a comment\n"
         end
 
+        @testset "the macro sees through `begin`" begin
+            @auto_hash_equals_cached @noop begin @noop struct T32
+                    @noop begin
+                        @noop x
+                    end
+                end
+            end
+            @test T32(1) == T32(1)
+            @test hash(T32(1)) == hash(T32(1))
+            @test hash(T32(1)) != hash(T32(2))
+        end
+
+        @testset "the macro sees through `const`" begin
+            # const fields were introduced in Julia 1.8
+            if VERSION >= v"1.8"
+                @auto_hash_equals mutable struct T33
+                    const x
+                end
+                @test T33(1) == T33(1)
+                @test hash(T33(1)) == hash(T33(1))
+                @test hash(T33(1)) != hash(T33(2))
+            end
+        end
+
+        @testset "misuse of the macro" begin
+            @test_throws Exception @eval @auto_hash_equals a struct T34 end
+        end
+
+        @testset "invalid type name 1" begin
+            @test_throws Exception @eval @auto_hash_equals_cached struct 1 end
+        end
+
+        @testset "invalid type name 2" begin
+            @test_throws Exception @eval @auto_hash_equals_cached struct a.b end
+        end
+
         @testset "empty struct" begin
             @auto_hash_equals_cached struct T35 end
             @test T35() isa T35
@@ -529,6 +565,12 @@ end
             end
         end
 
+        @testset "bad field name" begin
+            @test_throws Exception @eval @auto_hash_equals fields=(x, 1) struct S478
+                x
+                y
+            end
+        end
     end
 end
 
