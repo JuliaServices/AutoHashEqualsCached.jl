@@ -4,10 +4,10 @@ module runtests
 
 using AutoHashEqualsCached: @auto_hash_equals, @auto_hash_equals_cached
 using Markdown: plain
-using Serialization
-using Test
 using Match: Match, @match, MatchFailure
 using Random
+using Serialization
+using Test
 
 function serialize_and_deserialize(x)
     buf = IOBuffer()
@@ -22,6 +22,15 @@ macro noop(x)
     end)
 end
 
+macro _const(x)
+    # const fields were introduced in Julia 1.8
+    if VERSION >= v"1.8"
+        esc(Expr(:const , x))
+    else
+        esc(x)
+    end
+end
+
 # some custom hash function
 function myhash end
 myhash(o::T, h::UInt) where {T} = error("myhash not implemented for $T")
@@ -29,6 +38,22 @@ myhash(o::UInt, h::UInt) = xor(o, h)
 myhash(o::Symbol, h::UInt) = Base.hash(o, h)
 myhash(o::Type, h::UInt) = myhash(o.name.name, h)
 myhash(o) = myhash(o, UInt(0x0))
+
+# Some types for testing interoperation with `Match.jl`
+struct R157; x; y; end
+@auto_hash_equals_cached struct R158; x; y::Int; end
+@auto_hash_equals_cached struct R159{T}; x; y::T; end
+
+@auto_hash_equals fields=(a, b) struct R477
+    a
+    b
+    ignore_me
+end
+@auto_hash_equals cache=true fields=(a, b) struct R478
+    a
+    b
+    ignore_me
+end
 
 @testset "AutoHashEqualsCached.jl" begin
 
@@ -56,6 +81,40 @@ myhash(o) = myhash(o, UInt(0x0))
                 @noop x
             end
             @test plain(@doc T30) == "a comment\n"
+        end
+
+        @testset "the macro sees through other macros and `begin`" begin
+            @auto_hash_equals_cached @noop struct T32
+                @noop begin
+                    @noop x
+                end
+            end
+            @test T32(1) == T32(1)
+            @test hash(T32(1)) == hash(T32(1))
+            @test hash(T32(1)) != hash(T32(2))
+        end
+
+        @testset "the macro sees through `const`" begin
+            if VERSION >= v"1.8"
+                T33 = eval(:(@auto_hash_equals mutable struct T33
+                    @_const x
+                end))
+                @test T33(1) == T33(1)
+                @test hash(T33(1)) == hash(T33(1))
+                @test hash(T33(1)) != hash(T33(2))
+            end
+        end
+
+        @testset "misuse of the macro" begin
+            @test_throws Exception @eval @auto_hash_equals a struct T34 end
+        end
+
+        @testset "invalid type name 1" begin
+            @test_throws Exception @eval @auto_hash_equals_cached struct 1 end
+        end
+
+        @testset "invalid type name 2" begin
+            @test_throws Exception @eval @auto_hash_equals_cached struct a.b end
         end
 
         @testset "empty struct" begin
@@ -235,6 +294,34 @@ myhash(o) = myhash(o, UInt(0x0))
             end
         end
 
+        @testset "test interoperation with Match" begin
+
+            @testset "test simple Match usage" begin
+                @test (Match.@match R157(z,2) = R157(1,2)) == R157(1,2) && z == 1
+                @test_throws Match.MatchFailure Match.@match R157(x, 3) = R157(1,2)
+                @test (Match.@match R157(1,2) begin
+                    R157(x=x1,y=y1) => (x1,y1)
+                end) == (1,2)
+            end
+
+            @testset "make sure Match works for types with cached hash code" begin
+                @test (Match.@match R158(x,2) = R158(1,2)) == R158(1,2) && x == 1
+                @test_throws Match.MatchFailure Match.@match R158(x, 3) = R158(1,2)
+                @test (Match.@match R158(1,2) begin
+                    R158(x=x1,y=y1) => (x1,y1)
+                end) == (1,2)
+            end
+
+            @testset "make sure Match works for generic types with cached hash code" begin
+                @test (Match.@match R159(x,2) = R159(1,2)) == R159(1,2) && x == 1
+                @test_throws Match.MatchFailure Match.@match R159(x, 3) = R159(1,2)
+                @test (Match.@match R159(1,2) begin
+                    R159(x=x1,y=y1) => (x1,y1)
+                end) == (1,2)
+            end
+
+        end
+
         @testset "give an error if the struct contains internal constructors 4" begin
             @test_throws internal_constructor_error begin
                 @macroexpand @auto_hash_equals_cached struct T156
@@ -255,16 +342,6 @@ myhash(o) = myhash(o, UInt(0x0))
             end
             @test S269{Int}(2.0).x === 2
             @test S269(2.0).x === 2.0
-        end
-
-        @testset "check that we can define custom hash function" begin
-            @auto_hash_equals_cached runtests.myhash struct S275
-                x::UInt
-            end
-            q, r = rand(RandomDevice(), UInt, 2)
-            @test myhash(S275(q)) == hash(S275(q))
-            @test myhash(S275(q), r) == hash(S275(q), r)
-            r !== 0 && @test myhash(S275(q), r) != hash(S275(q))
         end
     end
 
@@ -431,16 +508,77 @@ myhash(o) = myhash(o, UInt(0x0))
         end
 
         @testset "check that we can define custom hash function" begin
-            @auto_hash_equals runtests.myhash struct S470
+            @auto_hash_equals hashfn=runtests.myhash struct S470
                 x::UInt
             end
             q, r = rand(RandomDevice(), UInt, 2)
             @test myhash(S470(q)) == hash(S470(q))
             @test myhash(S470(q), r) == hash(S470(q), r)
-            r !== 0 && @test myhash(S275(q), r) != hash(S275(q))
+            r !== 0 && @test myhash(S470(q), r) != hash(S470(q))
         end
-    end
 
+        @testset "fields are obeyed for the hash function and for pattern-matching 1" begin
+            a = R477(1, 2, 3)
+            b = R477(1, 2, 4)
+            c = R477(1, 3, 3)
+            d = R477(2, 2, 3)
+            @test a == b
+            @test a != c
+            @test a != d
+            @test c != d
+            @test hash(a) == hash(b)
+            @test hash(a) != hash(c)
+            @test hash(a) != hash(d)
+            @test hash(c) != hash(d)
+            @test @match a begin
+                R477(1, 2) => true
+                _ => false
+            end
+        end
+
+        @testset "fields are obeyed for the hash function and for pattern-matching 2" begin
+            a = R478(1, 2, 3)
+            b = R478(1, 2, 4)
+            c = R478(1, 3, 3)
+            d = R478(2, 2, 3)
+            @test a == b
+            @test a != c
+            @test a != d
+            @test c != d
+            @test hash(a) == hash(b)
+            @test hash(a) != hash(c)
+            @test hash(a) != hash(d)
+            @test hash(c) != hash(d)
+            @test @match a begin
+                R478(1, 2) => true
+                _ => false
+            end
+        end
+
+        @testset "you may not name nonexistent fields" begin
+            @test_throws Exception @eval @auto_hash_equals fields=(x, z) struct S477
+                x
+                y
+            end
+        end
+
+        @testset "bad field name" begin
+            @test_throws Exception @eval @auto_hash_equals fields=(x, 1) struct S478
+                x
+                y
+            end
+        end
+
+        @testset "You may name a single field" begin
+            @auto_hash_equals fields=(x) struct S479
+                x
+                y
+            end
+            @test S479(1, 2) == S479(1, 3)
+            @test hash(S479(1, 2)) == hash(S479(1, 3))
+        end
+
+    end
 end
 
 end # module
