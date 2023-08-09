@@ -343,16 +343,6 @@ end
             @test S269{Int}(2.0).x === 2
             @test S269(2.0).x === 2.0
         end
-
-        @testset "check that we can define custom hash function" begin
-            @auto_hash_equals_cached runtests.myhash struct S275
-                x::UInt
-            end
-            q, r = rand(RandomDevice(), UInt, 2)
-            @test myhash(S275(q)) == hash(S275(q))
-            @test myhash(S275(q), r) == hash(S275(q), r)
-            r !== 0 && @test myhash(S275(q), r) != hash(S275(q))
-        end
     end
 
     @testset "tests for @auto_hash_equals" begin
@@ -524,7 +514,7 @@ end
             q, r = rand(RandomDevice(), UInt, 2)
             @test myhash(S470(q)) == hash(S470(q))
             @test myhash(S470(q), r) == hash(S470(q), r)
-            r !== 0 && @test myhash(S275(q), r) != hash(S275(q))
+            r !== 0 && @test myhash(S470(q), r) != hash(S470(q))
         end
 
         @testset "fields are obeyed for the hash function and for pattern-matching 1" begin

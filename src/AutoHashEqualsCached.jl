@@ -20,7 +20,7 @@ Options:
 macro auto_hash_equals(args...)
     kwargs = Dict{Symbol,Any}()
     length(args) > 0 || error_usage(__source__)
-    for option in args[1:length(args)-1]
+    for option in args[1:end-1]
         if !isexpr(option, :(=), 2) || !(option.args[1] isa Symbol)
             error("$(__source__.file):$(__source__.line): expected keyword argument of the form `key=value`, but saw `$option`")
         end
@@ -50,15 +50,6 @@ Shorthand for @auto_hash_equals cache=true struct Foo ... end
 """
 macro auto_hash_equals_cached(typ)
     esc(Expr(:macrocall, var"@auto_hash_equals", __source__, :(cache = true), typ))
-end
-
-"""
-    @auto_hash_equals_cached althashfunction struct Foo ... end
-
-Shorthand for @auto_hash_equals hashfn=althashfunction cache=true struct Foo ... end
-"""
-macro auto_hash_equals_cached(althashfunction, typ)
-    esc(Expr(:macrocall, :var"@auto_hash_equals", __source__, :(hashfn = $althashfunction), :(cache = true), typ))
 end
 
 end # module
