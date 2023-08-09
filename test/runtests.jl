@@ -22,6 +22,15 @@ macro noop(x)
     end)
 end
 
+macro _const(x)
+    # const fields were introduced in Julia 1.8
+    if VERSION >= v"1.8"
+        esc(Expr(:const , x))
+    else
+        esc(x)
+    end
+end
+
 # some custom hash function
 function myhash end
 myhash(o::T, h::UInt) where {T} = error("myhash not implemented for $T")
@@ -74,11 +83,10 @@ end
             @test plain(@doc T30) == "a comment\n"
         end
 
-        @testset "the macro sees through `begin`" begin
-            @auto_hash_equals_cached @noop begin @noop struct T32
-                    @noop begin
-                        @noop x
-                    end
+        @testset "the macro sees through other macros and `begin`" begin
+            @auto_hash_equals_cached @noop struct T32
+                @noop begin
+                    @noop x
                 end
             end
             @test T32(1) == T32(1)
@@ -87,11 +95,10 @@ end
         end
 
         @testset "the macro sees through `const`" begin
-            # const fields were introduced in Julia 1.8
             if VERSION >= v"1.8"
-                @auto_hash_equals mutable struct T33
-                    const x
-                end
+                T33 = eval(:(@auto_hash_equals mutable struct T33
+                    @_const x
+                end))
                 @test T33(1) == T33(1)
                 @test hash(T33(1)) == hash(T33(1))
                 @test hash(T33(1)) != hash(T33(2))

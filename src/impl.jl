@@ -73,18 +73,6 @@ function get_struct_decl(__source__, typ::Expr)
         return typ
     elseif typ.head === :macrocall
         return get_struct_decl(__source__, typ.args[3])
-    elseif typ.head === :block
-        # get the first struct decl in the block
-        for x in typ.args
-            if x isa LineNumberNode
-                __source__ = x
-            elseif x isa Expr && (x.head === :macrocall || x.head === :struct || x.head === :block)
-                result = get_struct_decl(__source__, x)
-                if !isnothing(result)
-                    return result
-                end
-            end
-        end
     end
 
     error_usage(__source__)
@@ -340,6 +328,10 @@ function auto_hash_equals_impl(__source__, struct_decl, fields, cache::Bool, has
             $equalty_impl
             end)))
     end
+
+    # Evaluating a struct declaration normally returns the struct itself.
+    # Lets preserve that.
+    push!(result.args, esc(type_name))
 
     return result
 end
