@@ -1,3 +1,6 @@
+# This package has been archived.  Please use https://github.com/JuliaServices/AutoHashEquals.jl instead!
+
+
 [![Build Status](https://github.com/JuliaServices/AutoHashEqualsCached.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/JuliaServices/AutoHashEqualsCached.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/JuliaServices/AutoHashEqualsCached.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/JuliaServices/AutoHashEqualsCached.jl)
 
